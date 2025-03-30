@@ -1,5 +1,5 @@
 import { prisma } from '../config/prisma';
-import { CreateEventDTO, EventFilters, EventResponse, TicketResponse } from '../types/eventTypes';
+import { CreateEventDTO, EventFilters, EventResponse } from '../types/eventTypes';
 
 export class EventService {
 
@@ -39,6 +39,7 @@ export class EventService {
             }
         }
 
+
         return prisma.$transaction(async (tx) => {
             // 1 - Create the event
             const event = await tx.event.create({
@@ -57,7 +58,7 @@ export class EventService {
             });
 
             // 2 - Create the tickets and link them to the event (paid events only)
-            let eventTickets: TicketResponse[] = [];
+            let eventTickets: any = [];
             if (!eventData.isFree && eventData.tickets && eventData.tickets.length > 0) {
                 eventTickets = await Promise.all(
                     eventData.tickets.map(async (ticket) => {
@@ -212,7 +213,7 @@ export class EventService {
                     }
                 }
             }),
-            prisma.event.count({ where }) // Count the total number of events
+            prisma.event.count({ where: {} }) // Count the total number of events
         ]);
 
         // 4. Return the events and total count with pagination
@@ -407,84 +408,37 @@ export class EventService {
                 const existingEventQuestions = await tx.eventQuestions.findMany({
                     where: { eventId: eventId },
                     select: {
-                        id: true,        // ID of the EventQuestions link itself
-                        questionId: true,
-                        isRequired: true,
-                        displayOrder: true,
-                        _count: {
-                            select: { responses: true }
+                        id: true
+                    }
+                });
+
+                const questionsWithResponseIds = questionsWithResponses.map(q => q.id);
+
+                // Delete questions that don't have responses
+                await tx.eventQuestions.deleteMany({
+                    where: {
+                        eventId,
+                        id: {
+                            notIn: questionsWithResponseIds
                         }
                     }
                 });
-                // Map questionId to the EventQuestions link record for quick lookup
-                const existingEventQuestionMap = new Map(existingEventQuestions.map(eq => [eq.questionId, eq]));
-                // Track EventQuestions link IDs that should remain after the update
-                const finalEventQuestionLinkIds = new Set<number>();
 
-                // 03.2 - Process incoming questions
-                for (const incomingQuestion of eventData.questions) {
-                    let questionId: number;
-
-                    // Try to find an existing Question by its text
-                    const existingQuestion = await tx.question.findFirst({
-                        where: { questionText: incomingQuestion.questionText }
+                // Create new questions
+                for (const q of eventData.questions) {
+                    const question = await tx.question.create({
+                        data: {
+                            questionText: q.questionText,
+                            questionType: 'TEXT'
+                        }
                     });
 
-                    if (existingQuestion) {
-                        questionId = existingQuestion.id;
-                    } else {
-                        // Create a new Question if it doesn't exist
-                        const newQuestion = await tx.question.create({
-                            data: {
-                                questionText: incomingQuestion.questionText,
-                                questionType: 'TEXT' // Defaulting type
-                            }
-                        });
-                        questionId = newQuestion.id;
-                    }
-
-                    // Check if this question is already linked to the event
-                    const existingLink = existingEventQuestionMap.get(questionId);
-
-                    if (existingLink) {
-                        // Update existing EventQuestions link if needed
-                        if (existingLink.isRequired !== incomingQuestion.isRequired || existingLink.displayOrder !== incomingQuestion.displayOrder) {
-                            await tx.eventQuestions.update({
-                                where: { id: existingLink.id },
-                                data: {
-                                    isRequired: incomingQuestion.isRequired,
-                                    displayOrder: incomingQuestion.displayOrder
-                                }
-                            });
-                        }
-                        // Mark this EventQuestions link ID as final (should not be deleted)
-                        finalEventQuestionLinkIds.add(existingLink.id);
-                    } else {
-                        // Create new EventQuestions link
-                        const newLink = await tx.eventQuestions.create({
-                            data: {
-                                eventId: eventId,
-                                questionId: questionId,
-                                isRequired: incomingQuestion.isRequired,
-                                displayOrder: incomingQuestion.displayOrder
-                            }
-                        });
-                        // Mark this new EventQuestions link ID as final
-                        finalEventQuestionLinkIds.add(newLink.id);
-                    }
-                }
-
-                // 03.3 - Determine which existing EventQuestions links to delete
-                const eventQuestionLinkIdsToDelete = existingEventQuestions
-                    .filter(eq => !finalEventQuestionLinkIds.has(eq.id) && eq._count.responses === 0) // Only delete if not in the final set AND no responses exist
-                    .map(eq => eq.id);
-
-                if (eventQuestionLinkIdsToDelete.length > 0) {
-                    await tx.eventQuestions.deleteMany({
-                        where: {
-                            id: {
-                                in: eventQuestionLinkIdsToDelete
-                            }
+                    await tx.eventQuestions.create({
+                        data: {
+                            eventId,
+                            questionId: question.id,
+                            isRequired: q.isRequired,
+                            displayOrder: q.displayOrder
                         }
                     });
                 }
@@ -514,7 +468,7 @@ export class EventService {
             throw new Error('Cancelled events can only be restored to draft status');
         }
 
-        // 01 - For publishing, verify the event has questions and tickets (if paid)
+        // For publishing, verify the event has questions and tickets (if paid)
         if (status === 'PUBLISHED') {
 
             // Get question count
@@ -537,7 +491,7 @@ export class EventService {
             }
         }
 
-        // 02 - For cancellation, handle existing registrations
+        // For cancellation, handle existing registrations
         if (status === 'CANCELLED' && existingEvent.status === 'PUBLISHED') {
             const registrationCount = await prisma.registration.count({
                 where: { eventId }

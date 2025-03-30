@@ -37,7 +37,7 @@ describe('AuthService', () => {
         }
 
         // Test 1: Registering a new user
-        it('should register a new user', async() => {
+        it('should register a new user', async () => {
 
             // Mock hashed password
             const hashedPassword = 'hashedPassword123';
@@ -62,13 +62,13 @@ describe('AuthService', () => {
 
             //Verify the results
             expect(bcrypt.hash).toHaveBeenCalledWith(registerData.password, 10); // Check if password was hashed
-            expect(prisma.user.create).toHaveBeenCalledWith({ 
+            expect(prisma.user.create).toHaveBeenCalledWith({
                 data: {
                     ...registerData,
                     password: hashedPassword,
                     role: 'PARTICIPANT'
                 }
-            }); 
+            });
 
             // Check the returned data
             expect(result).toHaveProperty('user');
@@ -90,7 +90,7 @@ describe('AuthService', () => {
         //Test 2: Error handling for existing user
         it('should throw an error if the email already exists', async () => {
             // Mock findUnique
-            (prisma.user.findUnique as jest.Mock).mockResolvedValue({id : 1});
+            (prisma.user.findUnique as jest.Mock).mockResolvedValue({ id: 1 });
 
             // Expect error
             await expect(AuthService.registerUser(registerData))
