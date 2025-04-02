@@ -39,7 +39,6 @@ export class EventService {
             }
         }
 
-
         return prisma.$transaction(async (tx) => {
             // 1 - Create the event
             const event = await tx.event.create({
