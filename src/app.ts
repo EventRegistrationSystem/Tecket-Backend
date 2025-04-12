@@ -7,7 +7,7 @@ import authRoutes from './routes/authRoutes';
 import eventRoutes from './routes/eventRoutes';
 import userRoutes from './routes/userRoutes';
 import ticketRoutes from './routes/ticketRoutes';
-import registrationRoutes from './routes/registrationRoutes'; // Added import
+import registrationRoutes from './routes/registrationRoutes';
 
 import swaggerUi from 'swagger-ui-express';
 import specs from './config/swagger';
@@ -21,7 +21,7 @@ app.use(cookieParser());  // Middleware to parse cookies
 // Enable CORS for all routes
 app.use(cors({
     origin: '*', // Allow all origins (for development purposes only)
-    methods: ['GET', 'POST', 'PUT', 'DELETE'], // Allowed HTTP methods
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
 }));
 
 // Swagger UI route
@@ -32,6 +32,6 @@ app.use('/api/auth', authRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api', ticketRoutes);
-app.use('/api/registrations', registrationRoutes); // Added registration routes
+app.use('/api/registrations', registrationRoutes);
 
 export default app;
