@@ -129,7 +129,6 @@ const router = Router();
 router.post(
     '/',
     // authenticate, // Uncomment if registration requires authentication
-    // No auth needed for creating registration? Or add authenticate here if required.
     RegistrationController.createRegistration
 );
 
@@ -237,7 +236,7 @@ router.post(
  */
 router.get(
     '/',
-    authenticate, // Apply authentication middleware
+    authenticate, 
     RegistrationController.getRegistrations
 );
 
@@ -332,8 +331,8 @@ router.get(
  */
 router.get(
     '/:registrationId',
-    authenticate, // Apply authentication middleware
+    authenticate, 
     RegistrationController.getRegistrationById
 );
 
-export default router; // Export the router for use in the main app
+export default router; 
