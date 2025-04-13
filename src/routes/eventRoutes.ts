@@ -175,7 +175,7 @@ router.get('/:id', EventController.getEventById);
  */
 router.post('/',
     authenticate,
-    // validateRequest(createEventSchema),
+    validateRequest(createEventSchema),
     EventController.createEvent);
 
 /**

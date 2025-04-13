@@ -46,7 +46,7 @@ export class RegistrationService {
                 throw new Error('Ticket and quantity are required for paid events');
 
             // Find the ticket
-            const ticket = event.tickets.find(ticket => { ticket.id === registrationData.ticketId });
+            const ticket = event.tickets.find(ticket => ticket.id === registrationData.ticketId);
             if (!ticket) {
                 throw new Error('Ticket not found');
             }
