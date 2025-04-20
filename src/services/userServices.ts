@@ -28,11 +28,11 @@ export class UserService {
         // Update user data
         const updatedUser = await prisma.user.update({
             where: { id: userId },
-            data: data
+            data: data // Keep only one data line
         });
 
-        // Remove password from user object
-        const { password, ...userWithoutPassword } = user;
+        // Remove password from the *updated* user object
+        const { password, ...userWithoutPassword } = updatedUser;
         return userWithoutPassword;
     }
 
