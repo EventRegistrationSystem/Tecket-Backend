@@ -11,16 +11,17 @@ beforeAll(async () => {
 
 // Clear test data after all tests
 afterAll(async () => {
-    // Clean up database
-    await prisma.user.deleteMany();
-    await prisma.payment.deleteMany();
-    await prisma.purchase.deleteMany();
-    await prisma.response.deleteMany();
-    await prisma.eventQuestions.deleteMany();
-    await prisma.question.deleteMany();
-    await prisma.ticket.deleteMany();
-    await prisma.registration.deleteMany();
-    await prisma.event.deleteMany();
+    // Clean up database in an order that respects foreign key constraints
+    await prisma.payment.deleteMany();       // Depends on Purchase
+    await prisma.purchase.deleteMany();      // Depends on Registration, Ticket
+    await prisma.response.deleteMany();      // Depends on Registration, EventQuestions
+    await prisma.eventQuestions.deleteMany(); // Depends on Event, Question
+    await prisma.ticket.deleteMany();        // Depends on Event
+    await prisma.registration.deleteMany();  // Depends on Event, Participant, User
+    await prisma.event.deleteMany();         // Depends on User (organiserId)
+    await prisma.participant.deleteMany();   // Depends on User
+    await prisma.question.deleteMany();      // Independent after EventQuestions deleted
+    await prisma.user.deleteMany();          // Delete users last
 
     await prisma.$disconnect();
     console.log('Disconnected from test database');
