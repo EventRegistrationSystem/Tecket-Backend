@@ -18,8 +18,8 @@ export class RegistrationController {
             // 1. Validate request body
             const { error, value } = registrationValidationSchema.validate(req.body);
             if (error) {
+                
                 // Use status 400 for validation errors
-                // Corrected argument order: statusCode first, then message
                 throw new AppError(400, `Validation failed: ${error.details.map(x => x.message).join(', ')}`);
             }
 
@@ -100,9 +100,6 @@ export class RegistrationController {
 
             // 2. Call service method
             const registration = await RegistrationService.getRegistrationById(registrationId, req.user);
-
-            // Service method should throw error if not found or not authorized
-            // If it returns successfully, send the data
 
             // 3. Send response
             res.status(200).json({

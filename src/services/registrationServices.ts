@@ -1,4 +1,4 @@
-import { Registration, UserRole, Prisma } from '@prisma/client'; 
+import { Registration, UserRole, Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma';
 import { RegistrationDto } from '../types/registrationTypes';
 import { ParticipantService } from './participantServices'; // Import ParticipantService
@@ -18,12 +18,13 @@ export class RegistrationService {
      * 01 - Register a participant for an event
      */
     static async registerForEvent(registrationData: RegistrationDto) {
-        const event = await prisma.event.findUnique({ 
+        const event = await prisma.event.findUnique({
             where: { id: registrationData.eventId },
             include: {
                 tickets: true,
-                eventQuestions: { include: { question: true }}
-            }});
+                eventQuestions: { include: { question: true } }
+            }
+        });
 
         if (!event) {
             throw new Error('Event not found');
@@ -41,11 +42,11 @@ export class RegistrationService {
         // Validate ticket data if event is paid
         if (!event.isFree) {
             // Ticket must be selected
-            if (!registrationData.ticketId || !registrationData.quantity) 
+            if (!registrationData.ticketId || !registrationData.quantity)
                 throw new Error('Ticket and quantity are required for paid events');
 
             // Find the ticket
-            const ticket = event.tickets.find(ticket => {ticket.id === registrationData.ticketId});
+            const ticket = event.tickets.find(ticket => ticket.id === registrationData.ticketId);
             if (!ticket) {
                 throw new Error('Ticket not found');
             }
@@ -71,7 +72,7 @@ export class RegistrationService {
             if (!question) continue; // Should not happen
 
             if (!providedQuestionIds.has(reqId)) {
-                 throw new Error(`Response required for question: "${question.questionText}"`);
+                throw new Error(`Response required for question: "${question.questionText}"`);
             }
             // Check if response text is empty for required questions
             const response = registrationData.responses.find(r => r.questionId === reqId);
@@ -116,7 +117,7 @@ export class RegistrationService {
                     participantId: participant.id,
                     // Link to user if participant is associated with a user account
                     userId: participant.userId,
-                    status: 'CONFIRMED' // Assuming direct confirmation for now
+                    status: event.isFree ? 'CONFIRMED' : 'PENDING' // Conditional status based on event type
                 }
             });
 
@@ -212,10 +213,10 @@ export class RegistrationService {
                 // Organizer can optionally filter by userId within their event
                 if (userId) where.userId = userId;
             } else {
-                 // Non-admin, non-organizer trying to filter by eventId - show only their own within that event
-                 where.eventId = eventId;
-                 where.userId = authUser.userId; // Restrict to own registrations within the event
-                 isAuthorized = true; // Authorized to see their own
+                // Non-admin, non-organizer trying to filter by eventId - show only their own within that event
+                where.eventId = eventId;
+                where.userId = authUser.userId; // Restrict to own registrations within the event
+                isAuthorized = true; // Authorized to see their own
             }
         } else if (userId) {
             // Check if user is requesting their own registrations
@@ -224,7 +225,7 @@ export class RegistrationService {
                 where.userId = userId;
             } else {
                 // If not admin and requesting someone else's userId, forbid
-                 throw new AppError(403, 'Forbidden: You can only view your own registrations or event registrations if you are the organizer.');
+                throw new AppError(403, 'Forbidden: You can only view your own registrations or event registrations if you are the organizer.');
             }
         } else {
             // No specific filters provided by non-admin, default to showing only their own
@@ -233,7 +234,7 @@ export class RegistrationService {
         }
 
         if (!isAuthorized) {
-             // This case should ideally be caught by the logic above, but as a safeguard
+            // This case should ideally be caught by the logic above, but as a safeguard
             throw new AppError(403, 'Forbidden: You do not have permission to view these registrations.');
         }
 
