@@ -1,41 +1,44 @@
-import { EventService} from "../../services/eventServices";
+import { EventService } from "../../services/eventServices";
 import { prisma } from "../../config/prisma";
 import { CreateEventDTO } from "../../types/eventTypes";
 
 // Mock Prisma client
 jest.mock('../../config/prisma', () => ({
-  prisma: {
-      event: {
-          findMany: jest.fn(),
-          findUnique: jest.fn(),
-          create: jest.fn(),
-          update: jest.fn(),
-          delete: jest.fn(),
-          count: jest.fn()
-      },
-      ticket: {
-          create: jest.fn(),
-          deleteMany: jest.fn(),
-          count: jest.fn()
-      },
-      eventQuestions: {
-          create: jest.fn(),
-          findMany: jest.fn(),
-          deleteMany: jest.fn(),
-          count: jest.fn()
-      },
-      question: {
-          create: jest.fn()
-      },
-      registration: {
-          count: jest.fn(),
-          updateMany: jest.fn()
-      },
-      $transaction: jest.fn(callback => callback(prisma))
-  }
+    prisma: {
+        event: {
+            findMany: jest.fn(),
+            findUnique: jest.fn(),
+            create: jest.fn(),
+            update: jest.fn(),
+            delete: jest.fn(),
+            count: jest.fn()
+        },
+        ticket: {
+            create: jest.fn(),
+            deleteMany: jest.fn(),
+            count: jest.fn()
+        },
+        eventQuestions: {
+            create: jest.fn(),
+            findMany: jest.fn(),
+            deleteMany: jest.fn(),
+            count: jest.fn(),
+            update: jest.fn(), // Added mock for eventQuestions update
+        },
+        question: {
+            create: jest.fn(),
+            findFirst: jest.fn(), // Added mock for question findFirst
+            upsert: jest.fn(), // Added mock for question upsert (used in new logic)
+        },
+        registration: {
+            count: jest.fn(),
+            updateMany: jest.fn()
+        },
+        $transaction: jest.fn(callback => callback(prisma))
+    }
 }));
 
-describe('EventService', () => { 
+describe('EventService', () => {
 
     beforeEach(() => {
         jest.clearAllMocks();
@@ -44,10 +47,10 @@ describe('EventService', () => {
     // Sample test data
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
-    
+
     const dayAfterTomorrow = new Date();
     dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2);
-    
+
     const validPaidEventData: CreateEventDTO = {
         name: "Test Paid Event",
         description: "This is a test paid event",
@@ -75,7 +78,7 @@ describe('EventService', () => {
             }
         ]
     };
-    
+
     const validFreeEventData: CreateEventDTO = {
         name: "Test Free Event",
         description: "This is a test free event",
@@ -96,278 +99,479 @@ describe('EventService', () => {
 
     // Test cases for createEvent method
     describe('createEvent', () => {
-      it('should create a paid event successfully with tickets', async () => {
-        const mockEvent = {id: 1, ...validFreeEventData};
-        const mockTicket = {id: 1, eventId: 1, ...validPaidEventData.tickets![0]};
-        const mockQuestion = {id: 1, questionText: 'What is your t-shirt sizee?'};
-        const mockEventQuestion = { id: 1, eventId: 1, questionId: 1 };
+        it('should create a paid event successfully with tickets', async () => {
+            const mockEvent = { id: 1, ...validFreeEventData };
+            const mockTicket = { id: 1, eventId: 1, ...validPaidEventData.tickets![0] };
+            const mockQuestion = { id: 1, questionText: 'What is your t-shirt sizee?' };
+            const mockEventQuestion = { id: 1, eventId: 1, questionId: 1 };
 
-        // Mock the Prisma client methods
-        (prisma.event.create as jest.Mock).mockResolvedValue(mockEvent);
-        (prisma.ticket.create as jest.Mock).mockResolvedValue(mockTicket);
-        (prisma.question.create as jest.Mock).mockResolvedValue(mockQuestion);
-        (prisma.eventQuestions.create as jest.Mock).mockResolvedValue(mockEventQuestion);
+            // Mock the Prisma client methods
+            (prisma.event.create as jest.Mock).mockResolvedValue(mockEvent);
+            (prisma.ticket.create as jest.Mock).mockResolvedValue(mockTicket);
+            (prisma.question.create as jest.Mock).mockResolvedValue(mockQuestion);
+            (prisma.eventQuestions.create as jest.Mock).mockResolvedValue(mockEventQuestion);
 
-        // Call the service
-        const result = await EventService.createEvent(1, validPaidEventData);
+            // Call the service
+            const result = await EventService.createEvent(1, validPaidEventData);
 
-        // Assertions
-        expect(result).toBeDefined();
-        expect(prisma.event.create).toHaveBeenCalledWith({
-            data: expect.objectContaining({
-                name: validPaidEventData.name,
-                isFree: false
-            })
+            // Assertions
+            expect(result).toBeDefined();
+            expect(prisma.event.create).toHaveBeenCalledWith({
+                data: expect.objectContaining({
+                    name: validPaidEventData.name,
+                    isFree: false
+                })
+            });
+            expect(prisma.ticket.create).toHaveBeenCalled();
+            expect(prisma.question.create).toHaveBeenCalled();
+            expect(prisma.eventQuestions.create).toHaveBeenCalled();
         });
-        expect(prisma.ticket.create).toHaveBeenCalled();
-        expect(prisma.question.create).toHaveBeenCalled();
-        expect(prisma.eventQuestions.create).toHaveBeenCalled();
-      });
 
-      it('should reject a paid event without tickets', async () => {
-        // Create invalid data without tickets
-        const invalidData = { 
-            ...validPaidEventData,
-            tickets: [] 
-        };
-        
-        // Expect error
-        await expect(EventService.createEvent(1, invalidData))
-            .rejects
-            .toThrow('At least one ticket type is required for paid events');
-      });
+        it('should reject a paid event without tickets', async () => {
+            // Create invalid data without tickets
+            const invalidData = {
+                ...validPaidEventData,
+                tickets: []
+            };
 
-      it('should reject a paid event without tickets', async () => {
-        // Create invalid data without tickets
-        const invalidData = { 
-            ...validPaidEventData,
-            tickets: [] 
-        };
-        
-        // Expect error
-        await expect(EventService.createEvent(1, invalidData))
-            .rejects
-            .toThrow('At least one ticket type is required for paid events');
-      });
+            // Expect error
+            await expect(EventService.createEvent(1, invalidData))
+                .rejects
+                .toThrow('At least one ticket type is required for paid events');
+        });
+
+        it('should reject a paid event without tickets', async () => {
+            // Create invalid data without tickets
+            const invalidData = {
+                ...validPaidEventData,
+                tickets: []
+            };
+
+            // Expect error
+            await expect(EventService.createEvent(1, invalidData))
+                .rejects
+                .toThrow('At least one ticket type is required for paid events');
+        });
     });
 
     // Test cases for getAllEvents method
     describe('getAllEvents', () => {
-      it('should return events and pagination', async () => {
-        // Mock data
-        const mockEvents = [{ id: 1, name: 'Test Event' }];
-        const mockCount = 1;
-        
-        (prisma.event.findMany as jest.Mock).mockResolvedValue(mockEvents);
-        (prisma.event.count as jest.Mock).mockResolvedValue(mockCount);
-        
-        // Call service
-        const result = await EventService.getAllEvents({ page: 1, limit: 10 });
-        
-        // Assertions
-        expect(result.events).toEqual(mockEvents);
-        expect(result.pagination).toEqual({
-            total: mockCount,
-            page: 1,
-            limit: 10,
-            pages: 1
-        });
-      });
+        it('should return events and pagination', async () => {
+            // Mock data
+            const mockEvents = [{ id: 1, name: 'Test Event' }];
+            const mockCount = 1;
 
-      it('should apply filters correctly', async () => {
-        // Mock response
-        (prisma.event.findMany as jest.Mock).mockResolvedValue([]);
-        (prisma.event.count as jest.Mock).mockResolvedValue(0);
-        
-        // Call with filters
-        await EventService.getAllEvents({
-            page: 1,
-            limit: 10,
-            filters: {
-                search: 'concert',
-                eventType: 'MUSICAL',
-                isFree: false
-            }
+            (prisma.event.findMany as jest.Mock).mockResolvedValue(mockEvents);
+            (prisma.event.count as jest.Mock).mockResolvedValue(mockCount);
+
+            // Call service
+            const result = await EventService.getAllEvents({ page: 1, limit: 10 });
+
+            // Assertions
+            expect(result.events).toEqual(mockEvents);
+            expect(result.pagination).toEqual({
+                total: mockCount,
+                page: 1,
+                limit: 10,
+                pages: 1
+            });
         });
-        
-        // Check filters were applied
-        expect(prisma.event.findMany).toHaveBeenCalledWith(
-            expect.objectContaining({
-                where: expect.objectContaining({
-                    OR: expect.any(Array),
+
+        it('should apply filters correctly', async () => {
+            // Mock response
+            (prisma.event.findMany as jest.Mock).mockResolvedValue([]);
+            (prisma.event.count as jest.Mock).mockResolvedValue(0);
+
+            // Call with filters
+            await EventService.getAllEvents({
+                page: 1,
+                limit: 10,
+                filters: {
+                    search: 'concert',
                     eventType: 'MUSICAL',
                     isFree: false
+                }
+            });
+
+            // Check filters were applied
+            expect(prisma.event.findMany).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    where: expect.objectContaining({
+                        OR: expect.any(Array),
+                        eventType: 'MUSICAL',
+                        isFree: false
+                    })
                 })
-            })
-        );
-      });
+            );
+        });
 
 
     });
 
     // Test cases for updateEvent method
     describe('updateEvent', () => {
-      it('should update event basic details', async () => {
-          // Mock data
-          const existingEvent = { 
-              id: 1, 
-              name: 'Old Name', 
-              isFree: false,
-              status: 'DRAFT'
-          };
-          const updateData = { name: 'New Name' };
-          
-          (prisma.event.findUnique as jest.Mock).mockResolvedValue(existingEvent);
-          (prisma.event.update as jest.Mock).mockResolvedValue({ ...existingEvent, ...updateData });
-          
-          // Call service
-          await EventService.updateEvent(1, updateData);
-          
-          // Assertions
-          expect(prisma.event.update).toHaveBeenCalledWith({
-              where: { id: 1 },
-              data: expect.objectContaining({
-                  name: 'New Name'
-              })
-          });
-      });
-      
-      it('should reject updates to completed events', async () => {
-          // Mock completed event
-          (prisma.event.findUnique as jest.Mock).mockResolvedValue({
-              id: 1,
-              status: 'COMPLETED'
-          });
-          
-          // Expect error
-          await expect(EventService.updateEvent(1, { name: 'New Name' }))
-              .rejects
-              .toThrow('Cannot update a completed event');
-      });
-      
-      it('should handle changing from free to paid correctly', async () => {
-          // Mock data
-          const existingEvent = { 
-              id: 1, 
-              name: 'Event', 
-              isFree: true,
-              status: 'DRAFT'
-          };
-          const updateData = { 
-              isFree: false,
-              tickets: [{
-                  name: "General Admission",
-                  price: 50,
-                  quantityTotal: 100,
-                  salesStart: new Date(),
-                  salesEnd: tomorrow
-              }]
-          };
-          
-          (prisma.event.findUnique as jest.Mock).mockResolvedValue(existingEvent);
-          (prisma.event.update as jest.Mock).mockResolvedValue({ ...existingEvent, isFree: false });
-          (prisma.registration.count as jest.Mock).mockResolvedValue(0);
-          
-          // Call service
-          await EventService.updateEvent(1, updateData);
-          
-          // Assertions
-          expect(prisma.event.update).toHaveBeenCalledWith({
-              where: { id: 1 },
-              data: expect.objectContaining({
-                  isFree: false
-              })
-          });
-          expect(prisma.ticket.create).toHaveBeenCalled();
-      });
+        it('should update event basic details', async () => {
+            // Mock data
+            const existingEvent = {
+                id: 1,
+                name: 'Old Name',
+                isFree: false,
+                status: 'DRAFT'
+            };
+            const updateData = { name: 'New Name' };
+
+            (prisma.event.findUnique as jest.Mock).mockResolvedValue(existingEvent);
+            (prisma.event.update as jest.Mock).mockResolvedValue({ ...existingEvent, ...updateData });
+
+            // Call service
+            await EventService.updateEvent(1, updateData);
+
+            // Assertions
+            expect(prisma.event.update).toHaveBeenCalledWith({
+                where: { id: 1 },
+                data: expect.objectContaining({
+                    name: 'New Name'
+                })
+            });
+        });
+
+        it('should reject updates to completed events', async () => {
+            // Mock completed event
+            (prisma.event.findUnique as jest.Mock).mockResolvedValue({
+                id: 1,
+                status: 'COMPLETED'
+            });
+
+            // Expect error
+            await expect(EventService.updateEvent(1, { name: 'New Name' }))
+                .rejects
+                .toThrow('Cannot update a completed event');
+        });
+
+        it('should handle changing from free to paid correctly', async () => {
+            // Mock data
+            const existingEvent = {
+                id: 1,
+                name: 'Event',
+                isFree: true,
+                status: 'DRAFT'
+            };
+            const updateData = {
+                isFree: false,
+                tickets: [{
+                    name: "General Admission",
+                    price: 50,
+                    quantityTotal: 100,
+                    salesStart: new Date(),
+                    salesEnd: tomorrow
+                }]
+            };
+
+            (prisma.event.findUnique as jest.Mock).mockResolvedValue(existingEvent);
+            (prisma.event.update as jest.Mock).mockResolvedValue({ ...existingEvent, isFree: false });
+            (prisma.registration.count as jest.Mock).mockResolvedValue(0);
+
+            // Call service
+            await EventService.updateEvent(1, updateData);
+
+            // Assertions
+            expect(prisma.event.update).toHaveBeenCalledWith({
+                where: { id: 1 },
+                data: expect.objectContaining({
+                    isFree: false
+                })
+            });
+            expect(prisma.ticket.create).toHaveBeenCalled();
+        });
+
+        // --- Tests for Question Handling during updateEvent ---
+
+        it('should add a new question during update', async () => {
+            const eventId = 1;
+            const existingEvent = { id: eventId, status: 'DRAFT', name: 'Old Event' };
+            const updateData = {
+                questions: [{ questionText: "New Question?", isRequired: false, displayOrder: 1 }]
+            };
+            const mockNewQuestion = { id: 101, questionText: "New Question?" };
+            const mockExistingEventQuestions: any[] = []; // No existing questions
+
+            (prisma.event.findUnique as jest.Mock).mockResolvedValue(existingEvent);
+            (prisma.event.update as jest.Mock).mockResolvedValue({ ...existingEvent }); // Mock basic event update
+            (prisma.eventQuestions.findMany as jest.Mock).mockResolvedValue(mockExistingEventQuestions);
+            (prisma.question.findFirst as jest.Mock).mockResolvedValue(null); // Question doesn't exist
+            (prisma.question.create as jest.Mock).mockResolvedValue(mockNewQuestion);
+            (prisma.eventQuestions.create as jest.Mock).mockResolvedValue({ id: 1, eventId, questionId: mockNewQuestion.id });
+            // Mock the final getEventWithDetails call
+            (EventService.getEventWithDetails as jest.Mock) = jest.fn().mockResolvedValue({ ...existingEvent, eventQuestions: [{ /* ... */ }] });
+
+
+            await EventService.updateEvent(eventId, updateData);
+
+            expect(prisma.eventQuestions.findMany).toHaveBeenCalledWith({ where: { eventId: eventId }, select: expect.any(Object) });
+            expect(prisma.question.findFirst).toHaveBeenCalledWith({ where: { questionText: "New Question?" } });
+            expect(prisma.question.create).toHaveBeenCalledWith({ data: { questionText: "New Question?", questionType: 'TEXT' } });
+            expect(prisma.eventQuestions.create).toHaveBeenCalledWith({
+                data: {
+                    eventId: eventId,
+                    questionId: mockNewQuestion.id,
+                    isRequired: false,
+                    displayOrder: 1
+                }
+            });
+            expect(prisma.eventQuestions.deleteMany).not.toHaveBeenCalled(); // No questions to delete
+        });
+
+        it('should update an existing question link (isRequired/displayOrder)', async () => {
+            const eventId = 1;
+            const existingEvent = { id: eventId, status: 'DRAFT', name: 'Old Event' };
+            const existingQuestionId = 101;
+            const updateData = {
+                questions: [{ questionText: "Existing Question?", isRequired: true, displayOrder: 5 }] // Changed isRequired and displayOrder
+            };
+            const mockExistingQuestion = { id: existingQuestionId, questionText: "Existing Question?" };
+            const mockExistingEventQuestions = [
+                { id: 1, eventId: eventId, questionId: existingQuestionId, isRequired: false, displayOrder: 1, _count: { responses: 0 } }
+            ];
+
+            (prisma.event.findUnique as jest.Mock).mockResolvedValue(existingEvent);
+            (prisma.event.update as jest.Mock).mockResolvedValue({ ...existingEvent });
+            (prisma.eventQuestions.findMany as jest.Mock).mockResolvedValue(mockExistingEventQuestions);
+            (prisma.question.findFirst as jest.Mock).mockResolvedValue(mockExistingQuestion); // Question exists
+            (prisma.eventQuestions.update as jest.Mock).mockResolvedValue({});
+            // Mock the final getEventWithDetails call
+            (EventService.getEventWithDetails as jest.Mock) = jest.fn().mockResolvedValue({ ...existingEvent, eventQuestions: [{ /* ... */ }] });
+
+
+            await EventService.updateEvent(eventId, updateData);
+
+            expect(prisma.eventQuestions.findMany).toHaveBeenCalledWith({ where: { eventId: eventId }, select: expect.any(Object) });
+            expect(prisma.question.findFirst).toHaveBeenCalledWith({ where: { questionText: "Existing Question?" } });
+            expect(prisma.question.create).not.toHaveBeenCalled();
+            expect(prisma.eventQuestions.create).not.toHaveBeenCalled();
+            expect(prisma.eventQuestions.update).toHaveBeenCalledWith({
+                where: { id: mockExistingEventQuestions[0].id },
+                data: {
+                    isRequired: true,
+                    displayOrder: 5
+                }
+            });
+            expect(prisma.eventQuestions.deleteMany).not.toHaveBeenCalled();
+        });
+
+        it('should remove an unanswered question link during update', async () => {
+            const eventId = 1;
+            const existingEvent = { id: eventId, status: 'DRAFT', name: 'Old Event' };
+            const questionIdToRemove = 102;
+            const updateData = {
+                questions: [{ questionText: "Keep Me", isRequired: true, displayOrder: 1 }] // Only "Keep Me" remains
+            };
+            const mockKeptQuestion = { id: 101, questionText: "Keep Me" };
+            const mockExistingEventQuestions = [
+                { id: 1, eventId: eventId, questionId: 101, isRequired: true, displayOrder: 1, _count: { responses: 0 } },
+                { id: 2, eventId: eventId, questionId: questionIdToRemove, isRequired: false, displayOrder: 2, _count: { responses: 0 } } // To be removed, 0 responses
+            ];
+
+            (prisma.event.findUnique as jest.Mock).mockResolvedValue(existingEvent);
+            (prisma.event.update as jest.Mock).mockResolvedValue({ ...existingEvent });
+            (prisma.eventQuestions.findMany as jest.Mock).mockResolvedValue(mockExistingEventQuestions);
+            (prisma.question.findFirst as jest.Mock).mockResolvedValue(mockKeptQuestion); // Mock finding "Keep Me"
+            (prisma.eventQuestions.update as jest.Mock).mockResolvedValue({}); // Mock potential update for "Keep Me"
+            (prisma.eventQuestions.deleteMany as jest.Mock).mockResolvedValue({});
+            // Mock the final getEventWithDetails call
+            (EventService.getEventWithDetails as jest.Mock) = jest.fn().mockResolvedValue({ ...existingEvent, eventQuestions: [{ /* ... */ }] });
+
+
+            await EventService.updateEvent(eventId, updateData);
+
+            expect(prisma.eventQuestions.findMany).toHaveBeenCalledWith({ where: { eventId: eventId }, select: expect.any(Object) });
+            expect(prisma.question.findFirst).toHaveBeenCalledWith({ where: { questionText: "Keep Me" } });
+            // Check that deleteMany was called for the correct EventQuestion link ID
+            expect(prisma.eventQuestions.deleteMany).toHaveBeenCalledWith({
+                where: {
+                    id: {
+                        in: [mockExistingEventQuestions[1].id] // ID of the link to question 102
+                    }
+                }
+            });
+        });
+
+        it('should NOT remove a question link that has responses', async () => {
+            const eventId = 1;
+            const existingEvent = { id: eventId, status: 'DRAFT', name: 'Old Event' };
+            const questionIdToAttemptRemove = 102;
+            const updateData = {
+                questions: [{ questionText: "Keep Me", isRequired: true, displayOrder: 1 }] // Attempt to remove Q102
+            };
+            const mockKeptQuestion = { id: 101, questionText: "Keep Me" };
+            const mockExistingEventQuestions = [
+                { id: 1, eventId: eventId, questionId: 101, isRequired: true, displayOrder: 1, _count: { responses: 0 } },
+                { id: 2, eventId: eventId, questionId: questionIdToAttemptRemove, isRequired: false, displayOrder: 2, _count: { responses: 5 } } // Has responses!
+            ];
+
+            (prisma.event.findUnique as jest.Mock).mockResolvedValue(existingEvent);
+            (prisma.event.update as jest.Mock).mockResolvedValue({ ...existingEvent });
+            (prisma.eventQuestions.findMany as jest.Mock).mockResolvedValue(mockExistingEventQuestions);
+            (prisma.question.findFirst as jest.Mock).mockResolvedValue(mockKeptQuestion);
+            (prisma.eventQuestions.update as jest.Mock).mockResolvedValue({});
+            // Mock the final getEventWithDetails call
+            (EventService.getEventWithDetails as jest.Mock) = jest.fn().mockResolvedValue({ ...existingEvent, eventQuestions: [{ /* ... */ }] });
+
+
+            await EventService.updateEvent(eventId, updateData);
+
+            expect(prisma.eventQuestions.findMany).toHaveBeenCalledWith({ where: { eventId: eventId }, select: expect.any(Object) });
+            // Ensure deleteMany was NOT called, or called with an empty list
+            expect(prisma.eventQuestions.deleteMany).toHaveBeenCalledWith({ where: { id: { in: [] } } });
+        });
+
+        it('should remove all unanswered questions if an empty questions array is provided', async () => {
+            const eventId = 1;
+            const existingEvent = { id: eventId, status: 'DRAFT', name: 'Old Event' };
+            const updateData = {
+                questions: [] // Empty array means remove all possible
+            };
+            const mockExistingEventQuestions = [
+                { id: 1, eventId: eventId, questionId: 101, isRequired: true, displayOrder: 1, _count: { responses: 0 } }, // No responses
+                { id: 2, eventId: eventId, questionId: 102, isRequired: false, displayOrder: 2, _count: { responses: 3 } }, // Has responses
+                { id: 3, eventId: eventId, questionId: 103, isRequired: false, displayOrder: 3, _count: { responses: 0 } }  // No responses
+            ];
+
+            (prisma.event.findUnique as jest.Mock).mockResolvedValue(existingEvent);
+            (prisma.event.update as jest.Mock).mockResolvedValue({ ...existingEvent });
+            (prisma.eventQuestions.findMany as jest.Mock).mockResolvedValue(mockExistingEventQuestions);
+            (prisma.eventQuestions.deleteMany as jest.Mock).mockResolvedValue({});
+            // Mock the final getEventWithDetails call
+            (EventService.getEventWithDetails as jest.Mock) = jest.fn().mockResolvedValue({ ...existingEvent, eventQuestions: [] });
+
+
+            await EventService.updateEvent(eventId, updateData);
+
+            expect(prisma.eventQuestions.findMany).toHaveBeenCalledWith({ where: { eventId: eventId }, select: expect.any(Object) });
+            expect(prisma.question.findFirst).not.toHaveBeenCalled(); // No incoming questions to process
+            expect(prisma.eventQuestions.create).not.toHaveBeenCalled();
+            expect(prisma.eventQuestions.update).not.toHaveBeenCalled();
+            // Should delete links with IDs 1 and 3 (those with 0 responses)
+            expect(prisma.eventQuestions.deleteMany).toHaveBeenCalledWith({
+                where: {
+                    id: {
+                        in: [mockExistingEventQuestions[0].id, mockExistingEventQuestions[2].id]
+                    }
+                }
+            });
+        });
+
+        it('should not modify questions if questions array is undefined', async () => {
+            const eventId = 1;
+            const existingEvent = { id: eventId, status: 'DRAFT', name: 'Old Event' };
+            const updateData = {
+                name: "Updated Event Name" // No questions property
+            };
+
+            (prisma.event.findUnique as jest.Mock).mockResolvedValue(existingEvent);
+            (prisma.event.update as jest.Mock).mockResolvedValue({ ...existingEvent, name: updateData.name });
+            // Mock the final getEventWithDetails call
+            (EventService.getEventWithDetails as jest.Mock) = jest.fn().mockResolvedValue({ ...existingEvent, name: updateData.name });
+
+
+            await EventService.updateEvent(eventId, updateData);
+
+            // Ensure question-related prisma calls were NOT made
+            expect(prisma.eventQuestions.findMany).not.toHaveBeenCalled();
+            expect(prisma.question.findFirst).not.toHaveBeenCalled();
+            expect(prisma.question.create).not.toHaveBeenCalled();
+            expect(prisma.eventQuestions.create).not.toHaveBeenCalled();
+            expect(prisma.eventQuestions.update).not.toHaveBeenCalled();
+            expect(prisma.eventQuestions.deleteMany).not.toHaveBeenCalled();
+        });
+
     });
 
     // Test cases for updateEventStatus method
     describe('updateEventStatus', () => {
 
-      it('should publish an event with valid data', async () => {
-          // Mock data
-          const draftEvent = { id: 1, status: 'DRAFT', isFree: true };
-          
-          (prisma.event.findUnique as jest.Mock).mockResolvedValue(draftEvent);
-          (prisma.eventQuestions.count as jest.Mock).mockResolvedValue(1);
-          (prisma.event.update as jest.Mock).mockResolvedValue({ ...draftEvent, status: 'PUBLISHED' });
-          
-          // Call service
-          const result = await EventService.updateEventStatus(1, 'PUBLISHED');
-          
-          // Assertions
-          expect(result.status).toBe('PUBLISHED');
-          expect(prisma.event.update).toHaveBeenCalledWith({
-              where: { id: 1 },
-              data: { status: 'PUBLISHED' }
-          });
-      });
-      
-      it('should cancel an event and update registrations', async () => {
-          // Mock data
-          const publishedEvent = { id: 1, status: 'PUBLISHED', isFree: true };
-          
-          (prisma.event.findUnique as jest.Mock).mockResolvedValue(publishedEvent);
-          (prisma.registration.count as jest.Mock).mockResolvedValue(5);
-          (prisma.event.update as jest.Mock).mockResolvedValue({ ...publishedEvent, status: 'CANCELLED' });
-          
-          // Call service
-          const result = await EventService.updateEventStatus(1, 'CANCELLED');
-          
-          // Assertions
-          expect(result.status).toBe('CANCELLED');
-          expect(prisma.registration.updateMany).toHaveBeenCalledWith({
-              where: expect.any(Object),
-              data: { status: 'CANCELLED' }
-          });
-      });
-      
-      it('should reject publishing an event without questions', async () => {
-          // Mock data
-          (prisma.event.findUnique as jest.Mock).mockResolvedValue({
-              id: 1, 
-              status: 'DRAFT',
-              isFree: true
-          });
-          (prisma.eventQuestions.count as jest.Mock).mockResolvedValue(0);
-          
-          // Expect error
-          await expect(EventService.updateEventStatus(1, 'PUBLISHED'))
-              .rejects
-              .toThrow('Events must have at least one question before publishing');
-      });
+        it('should publish an event with valid data', async () => {
+            // Mock data
+            const draftEvent = { id: 1, status: 'DRAFT', isFree: true };
+
+            (prisma.event.findUnique as jest.Mock).mockResolvedValue(draftEvent);
+            (prisma.eventQuestions.count as jest.Mock).mockResolvedValue(1);
+            (prisma.event.update as jest.Mock).mockResolvedValue({ ...draftEvent, status: 'PUBLISHED' });
+
+            // Call service
+            const result = await EventService.updateEventStatus(1, 'PUBLISHED');
+
+            // Assertions
+            expect(result.status).toBe('PUBLISHED');
+            expect(prisma.event.update).toHaveBeenCalledWith({
+                where: { id: 1 },
+                data: { status: 'PUBLISHED' }
+            });
+        });
+
+        it('should cancel an event and update registrations', async () => {
+            // Mock data
+            const publishedEvent = { id: 1, status: 'PUBLISHED', isFree: true };
+
+            (prisma.event.findUnique as jest.Mock).mockResolvedValue(publishedEvent);
+            (prisma.registration.count as jest.Mock).mockResolvedValue(5);
+            (prisma.event.update as jest.Mock).mockResolvedValue({ ...publishedEvent, status: 'CANCELLED' });
+
+            // Call service
+            const result = await EventService.updateEventStatus(1, 'CANCELLED');
+
+            // Assertions
+            expect(result.status).toBe('CANCELLED');
+            expect(prisma.registration.updateMany).toHaveBeenCalledWith({
+                where: expect.any(Object),
+                data: { status: 'CANCELLED' }
+            });
+        });
+
+        it('should reject publishing an event without questions', async () => {
+            // Mock data
+            (prisma.event.findUnique as jest.Mock).mockResolvedValue({
+                id: 1,
+                status: 'DRAFT',
+                isFree: true
+            });
+            (prisma.eventQuestions.count as jest.Mock).mockResolvedValue(0);
+
+            // Expect error
+            await expect(EventService.updateEventStatus(1, 'PUBLISHED'))
+                .rejects
+                .toThrow('Events must have at least one question before publishing');
+        });
     });
 
-    describe('getEventById', () => {});
-    
+    describe('getEventById', () => { });
+
     // Test cases for deleteEvent method
     describe('deleteEvent', () => {
-      it('should delete an event without registrations', async () => {
-          // Mock data
-          (prisma.event.findUnique as jest.Mock).mockResolvedValue({ id: 1 });
-          (prisma.registration.count as jest.Mock).mockResolvedValue(0);
-          
-          // Call service
-          await EventService.deleteEvent(1);
-          
-          // Assertions
-          expect(prisma.eventQuestions.deleteMany).toHaveBeenCalled();
-          expect(prisma.ticket.deleteMany).toHaveBeenCalled();
-          expect(prisma.event.delete).toHaveBeenCalledWith({
-              where: { id: 1 }
-          });
-      });
-      
-      it('should reject deleting an event with registrations', async () => {
-          // Mock data
-          (prisma.event.findUnique as jest.Mock).mockResolvedValue({ id: 1 });
-          (prisma.registration.count as jest.Mock).mockResolvedValue(5);
-          
-          // Expect error
-          await expect(EventService.deleteEvent(1))
-              .rejects
-              .toThrow('Cannot delete an event with registrations');
-      });
-  });
+        it('should delete an event without registrations', async () => {
+            // Mock data
+            (prisma.event.findUnique as jest.Mock).mockResolvedValue({ id: 1 });
+            (prisma.registration.count as jest.Mock).mockResolvedValue(0);
+
+            // Call service
+            await EventService.deleteEvent(1);
+
+            // Assertions
+            expect(prisma.eventQuestions.deleteMany).toHaveBeenCalled();
+            expect(prisma.ticket.deleteMany).toHaveBeenCalled();
+            expect(prisma.event.delete).toHaveBeenCalledWith({
+                where: { id: 1 }
+            });
+        });
+
+        it('should reject deleting an event with registrations', async () => {
+            // Mock data
+            (prisma.event.findUnique as jest.Mock).mockResolvedValue({ id: 1 });
+            (prisma.registration.count as jest.Mock).mockResolvedValue(5);
+
+            // Expect error
+            await expect(EventService.deleteEvent(1))
+                .rejects
+                .toThrow('Cannot delete an event with registrations');
+        });
+    });
 })
