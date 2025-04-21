@@ -1,6 +1,6 @@
 import Joi from 'joi';
 import { RegistrationDto } from '../types/registrationTypes';
-import { participantValidationSchema } from './participantValidation'; // Assuming participant validation exists
+import { participantValidationSchema } from './participantValidation'; 
 
 export const registrationValidationSchema = Joi.object<RegistrationDto>({
     eventId: Joi.number().integer().positive().required().messages({
