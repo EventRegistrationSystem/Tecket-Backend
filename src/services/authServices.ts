@@ -72,11 +72,11 @@ export class AuthService {
 
         // Find the user
         const user = await prisma.user.findUnique({ where: { email: email } });
-        if (!user) { throw new Error('Invalid credentials'); }
+        if (!user) { throw new AuthenticationError('Email does not exist!'); }
 
         // Verify password
         const passwordMatch = await bcrypt.compare(password, user.password);
-        if (!passwordMatch) { throw new Error('Invalid credentials'); }
+        if (!passwordMatch) { throw new AuthenticationError('Invalid credentials'); }
 
         // Generate JWT tokens
         const accessToken = this.generateAccessToken(user);
