@@ -1,10 +1,10 @@
 import { Request, Response } from 'express';
 import { AuthService } from '../services/authServices';
 import { RegisterDto, LoginDto } from '../types/authTypes';
-import { AppError, AuthenticationError } from '../utils/errors';
+import { AppError, AuthenticationError, ValidationError } from '../utils/errors'; // Import ValidationError
 
 export class AuthController {
-   
+
     private static readonly REFRESH_TOKEN_COOKIE_OPTIONS = {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production', // HTTPS only in production
@@ -28,16 +28,33 @@ export class AuthController {
                     accessToken: authData.accessToken
                 }
             });
-        }
-        catch (error) {
+        } catch (error) {
             console.error('Registration error:', error);
-        
-            res.status(500).json({
-                success: false,
-                message: error instanceof Error ? error.message : 'Unknown error',
-                // During development, include the full error for debugging
-                error: process.env.NODE_ENV !== 'production' ? String(error) : undefined
-            });
+
+            if (error instanceof ValidationError) {
+                // Specific handling for validation errors (e.g., email already exists)
+                // Consider using 409 Conflict if the ValidationError specifically means "already exists"
+                res.status(error.statusCode).json({ // Use statusCode from error
+                    success: false,
+                    message: error.message,
+                    error: process.env.NODE_ENV !== 'production' ? String(error) : undefined
+                });
+            } else if (error instanceof AppError) {
+                 // Handle other known application errors
+                res.status(error.statusCode).json({
+                    success: false,
+                    message: error.message,
+                    error: process.env.NODE_ENV !== 'production' ? String(error) : undefined
+                });
+            }
+            else {
+                // Handle unexpected errors
+                res.status(500).json({
+                    success: false,
+                    message: 'An unexpected error occurred during registration.',
+                    error: process.env.NODE_ENV !== 'production' ? String(error) : undefined
+                });
+            }
         }
     }
 
@@ -56,25 +73,43 @@ export class AuthController {
                     accessToken: authData.accessToken
                 }
             });
-        }
-        catch (error) {
+        } catch (error) {
             console.error('Login error:', error);
-        
-        res.status(500).json({
-            success: false,
-            message: error instanceof Error ? error.message : 'Unknown error',
-            // During development, include the full error for debugging
-            error: process.env.NODE_ENV !== 'production' ? String(error) : undefined
-        });
+
+            if (error instanceof AuthenticationError) {
+                res.status(error.statusCode).json({ // 401
+                    success: false,
+                    message: error.message, // e.g., "Invalid credentials"
+                    error: process.env.NODE_ENV !== 'production' ? String(error) : undefined
+                });
+            } else if (error instanceof AppError) {
+                res.status(error.statusCode).json({
+                    success: false,
+                    message: error.message,
+                    error: process.env.NODE_ENV !== 'production' ? String(error) : undefined
+                });
+            } else {
+                // Handle other unexpected errors
+                res.status(500).json({
+                    success: false,
+                    message: 'An unexpected error occurred during login.',
+                    error: process.env.NODE_ENV !== 'production' ? String(error) : undefined
+                });
+            }
         }
     }
 
     // 03 - Refresh token
     static async refreshToken(req: Request, res: Response) {
         try {
-            const {refreshToken} = req.cookies.refreshToken;
+            // Make sure to handle potential TypeError if req.cookies is undefined or refreshToken is not present
+            const refreshToken = req.cookies?.refreshToken;
             if (!refreshToken) {
-                throw new AuthenticationError('No refresh token provided');
+                // Send 401 directly if cookie is missing, no need to throw
+                 return res.status(401).json({
+                    success: false,
+                    message: 'No refresh token provided'
+                 });
             }
 
             const tokens = await AuthService.refreshToken(refreshToken);
@@ -88,17 +123,29 @@ export class AuthController {
                     accessToken: tokens.accessToken
                 }
             });
-            
-        }
-        catch(error){
+        } catch (error) {
             console.error('Error refreshing token:', error);
-        
-            res.status(500).json({
-                success: false,
-                message: error instanceof Error ? error.message : 'Unknown error',
-                // During development, include the full error for debugging
-                error: process.env.NODE_ENV !== 'production' ? String(error) : undefined
-            });
+
+            if (error instanceof AuthenticationError) {
+                res.status(error.statusCode).json({ // 401
+                    success: false,
+                    message: error.message, // e.g., "Invalid refresh token"
+                    error: process.env.NODE_ENV !== 'production' ? String(error) : undefined
+                });
+            } else if (error instanceof AppError) {
+                 res.status(error.statusCode).json({
+                    success: false,
+                    message: error.message,
+                    error: process.env.NODE_ENV !== 'production' ? String(error) : undefined
+                });
+            }
+            else {
+                res.status(500).json({
+                    success: false,
+                    message: 'An unexpected error occurred while refreshing the token.',
+                    error: process.env.NODE_ENV !== 'production' ? String(error) : undefined
+                });
+            }
         }
     }
 
@@ -113,16 +160,22 @@ export class AuthController {
                 message: 'Logged out successfully'
             });
 
-        }
-        catch (error) {
+        } catch (error) {
             console.error('Logout error:', error);
-        
-            res.status(500).json({
-                success: false,
-                message: error instanceof Error ? error.message : 'Unknown error',
-                // During development, include the full error for debugging
-                error: process.env.NODE_ENV !== 'production' ? String(error) : undefined
-            });
+
+             if (error instanceof AppError) {
+                 res.status(error.statusCode).json({
+                    success: false,
+                    message: error.message,
+                    error: process.env.NODE_ENV !== 'production' ? String(error) : undefined
+                });
+            } else {
+                res.status(500).json({
+                    success: false,
+                    message: 'An unexpected error occurred during logout.',
+                    error: process.env.NODE_ENV !== 'production' ? String(error) : undefined
+                });
+            }
         }
     }
 }
