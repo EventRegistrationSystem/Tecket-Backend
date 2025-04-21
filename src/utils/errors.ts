@@ -25,6 +25,14 @@ export class ValidationError extends AppError {
     }
 }
 
+// Authorization error class for permission denied
+export class AuthorizationError extends AppError {
+    constructor(message: string = 'Permission denied') {
+        super(403, message); // 403 Forbidden
+        this.name = 'AuthorizationError';
+    }
+}
+
 // Event error class for invalid event data
 export class EventError extends AppError {
     constructor(message: string) {
