@@ -1,8 +1,7 @@
 import { Registration, UserRole, Prisma, RegistrationStatus } from '@prisma/client';
 import { prisma } from '../config/prisma';
-import { RegistrationDto } from '../types/registrationTypes'; // Removed RegistrationQueryFilters import
+import { RegistrationDto } from '../types/registrationTypes';
 import { ParticipantService } from './participantServices';
-// Ensure all necessary error types are imported
 import { AppError, ValidationError, AuthorizationError, NotFoundError } from '../utils/errors';
 import { JwtPayload } from '../types/authTypes';
 
@@ -19,6 +18,8 @@ export class RegistrationService {
      * 01 - Register a participant for an event
      */
     static async registerForEvent(registrationData: RegistrationDto) {
+
+        // 1 - Fetch the event to check its status and capacity
         const event = await prisma.event.findUnique({
             where: { id: registrationData.eventId },
             include: {
@@ -27,25 +28,24 @@ export class RegistrationService {
             }
         });
 
-        if (!event) {
-            throw new NotFoundError('Event not found'); // Use NotFoundError
+        // 2 - Validate event existence and status
+        if (!event) { throw new NotFoundError('Event not found'); }
+        if (event.status !== 'PUBLISHED') { 
+            throw new ValidationError('Event is not currently open for registration.'); 
         }
 
-        if (event.status !== 'PUBLISHED') {
-             throw new ValidationError('Event is not currently open for registration.');
-        }
-
+        // 3 - Check if the event has a capacity limit
         const totalRegistrations = await prisma.registration.count({
             where: {
                 eventId: registrationData.eventId,
                 status: { in: [RegistrationStatus.CONFIRMED, RegistrationStatus.PENDING] }
             }
         });
-
         if (totalRegistrations >= event.capacity) {
             throw new ValidationError('Event is full');
         }
 
+        // 4 - Validate ticket data if the event is not free
         let ticketForPurchase = null;
         if (!event.isFree) {
             if (!registrationData.ticketId || !registrationData.quantity)
@@ -53,7 +53,7 @@ export class RegistrationService {
 
             ticketForPurchase = event.tickets.find(ticket => ticket.id === registrationData.ticketId);
             if (!ticketForPurchase) {
-                throw new NotFoundError('Ticket not found'); // Use NotFoundError
+                throw new NotFoundError('Ticket not found'); 
             }
             const now = new Date();
             if (ticketForPurchase.status !== 'ACTIVE') {
@@ -70,21 +70,30 @@ export class RegistrationService {
             }
         }
 
+        // 5 - Validate participant data
+        
+        // Identify required questions and check if they are answered
         const requiredQuestions = event.eventQuestions
             .filter(eq => eq.isRequired)
             .map(eq => eq.questionId);
+            
         const providedQuestionIds = new Set(registrationData.responses.map(r => r.questionId));
+
         for (const reqId of requiredQuestions) {
             const eventQuestion = event.eventQuestions.find(eq => eq.questionId === reqId);
+            
             if (!eventQuestion || !eventQuestion.question) continue;
+            
             if (!providedQuestionIds.has(reqId)) {
                 throw new ValidationError(`Response required for question: "${eventQuestion.question.questionText}"`);
             }
+            
             const response = registrationData.responses.find(r => r.questionId === reqId);
             if (response && response.responseText.trim() === '') {
                 throw new ValidationError(`Response cannot be empty for required question: "${eventQuestion.question.questionText}"`);
             }
         }
+
         const validQuestionIds = new Set(event.eventQuestions.map(eq => eq.questionId));
         for (const providedId of providedQuestionIds) {
             if (!validQuestionIds.has(providedId)) {
@@ -93,7 +102,7 @@ export class RegistrationService {
         }
 
         return prisma.$transaction(async (tx) => {
-            // Correct call to findOrCreateParticipant with 2 arguments
+            
             const participant = await ParticipantService.findOrCreateParticipant(registrationData.participant, tx);
 
             const registration = await tx.registration.create({
