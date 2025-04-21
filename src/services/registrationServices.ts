@@ -1,11 +1,11 @@
-import { Registration, UserRole, Prisma } from '@prisma/client';
+import { Registration, UserRole, Prisma, RegistrationStatus } from '@prisma/client';
 import { prisma } from '../config/prisma';
 import { RegistrationDto } from '../types/registrationTypes';
-import { ParticipantService } from './participantServices'; // Import ParticipantService
-import { AppError } from '../utils/errors'; // Import AppError
-import { JwtPayload } from '../types/authTypes'; // For authenticated user type
+import { ParticipantService } from './participantServices';
+import { AppError, ValidationError, AuthorizationError, NotFoundError } from '../utils/errors';
+import { JwtPayload } from '../types/authTypes';
 
-// Define type for query parameters validated by Joi
+// Define type for query parameters validated by Joi (used internally)
 interface GetRegistrationsQuery {
     eventId?: number;
     userId?: number;
@@ -18,6 +18,8 @@ export class RegistrationService {
      * 01 - Register a participant for an event
      */
     static async registerForEvent(registrationData: RegistrationDto) {
+
+        // 1 - Fetch the event to check its status and capacity
         const event = await prisma.event.findUnique({
             where: { id: registrationData.eventId },
             include: {
@@ -26,159 +28,132 @@ export class RegistrationService {
             }
         });
 
-        if (!event) {
-            throw new Error('Event not found');
+        // 2 - Validate event existence and status
+        if (!event) { throw new NotFoundError('Event not found'); }
+        if (event.status !== 'PUBLISHED') { 
+            throw new ValidationError('Event is not currently open for registration.'); 
         }
 
-        // Check if the event is full
+        // 3 - Check if the event has a capacity limit
         const totalRegistrations = await prisma.registration.count({
-            where: { eventId: registrationData.eventId }
+            where: {
+                eventId: registrationData.eventId,
+                status: { in: [RegistrationStatus.CONFIRMED, RegistrationStatus.PENDING] }
+            }
         });
-
         if (totalRegistrations >= event.capacity) {
-            throw new Error('Event is full');
+            throw new ValidationError('Event is full');
         }
 
-        // Validate ticket data if event is paid
+        // 4 - Validate ticket data if the event is not free
+        let ticketForPurchase = null;
         if (!event.isFree) {
-            // Ticket must be selected
             if (!registrationData.ticketId || !registrationData.quantity)
-                throw new Error('Ticket and quantity are required for paid events');
+                throw new ValidationError('Ticket ID and quantity are required for paid events');
 
-            // Find the ticket
-            const ticket = event.tickets.find(ticket => ticket.id === registrationData.ticketId);
-            if (!ticket) {
-                throw new Error('Ticket not found');
+            ticketForPurchase = event.tickets.find(ticket => ticket.id === registrationData.ticketId);
+            if (!ticketForPurchase) {
+                throw new NotFoundError('Ticket not found'); 
             }
-
-            // Check ticket availability (quantity)
-            if (ticket.quantitySold + registrationData.quantity > ticket.quantityTotal) {
-                throw new Error('Selected ticket quantity not available');
+            const now = new Date();
+            if (ticketForPurchase.status !== 'ACTIVE') {
+                 throw new ValidationError('Selected ticket is not active.');
+            }
+            if (ticketForPurchase.salesStart && now < new Date(ticketForPurchase.salesStart)) {
+                 throw new ValidationError('Selected ticket sales have not started yet.');
+            }
+            if (ticketForPurchase.salesEnd && now > new Date(ticketForPurchase.salesEnd)) {
+                 throw new ValidationError('Selected ticket sales have ended.');
+            }
+            if (ticketForPurchase.quantitySold + registrationData.quantity > ticketForPurchase.quantityTotal) {
+                throw new ValidationError('Selected ticket quantity not available');
             }
         }
 
-        // Validate responses against event questions
+        // 5 - Validate participant data
+        
+        // Identify required questions and check if they are answered
         const requiredQuestions = event.eventQuestions
             .filter(eq => eq.isRequired)
             .map(eq => eq.questionId);
-
+            
         const providedQuestionIds = new Set(registrationData.responses.map(r => r.questionId));
 
         for (const reqId of requiredQuestions) {
             const eventQuestion = event.eventQuestions.find(eq => eq.questionId === reqId);
-            if (!eventQuestion) continue; // Should not happen if data is consistent
-
-            const question = event.eventQuestions.find(eq => eq.questionId === reqId)?.question;
-            if (!question) continue; // Should not happen
-
+            
+            if (!eventQuestion || !eventQuestion.question) continue;
+            
             if (!providedQuestionIds.has(reqId)) {
-                throw new Error(`Response required for question: "${question.questionText}"`);
+                throw new ValidationError(`Response required for question: "${eventQuestion.question.questionText}"`);
             }
-            // Check if response text is empty for required questions
+            
             const response = registrationData.responses.find(r => r.questionId === reqId);
             if (response && response.responseText.trim() === '') {
-                throw new Error(`Response cannot be empty for required question: "${question.questionText}"`);
+                throw new ValidationError(`Response cannot be empty for required question: "${eventQuestion.question.questionText}"`);
             }
         }
 
-        // Check if all provided question IDs belong to the event
         const validQuestionIds = new Set(event.eventQuestions.map(eq => eq.questionId));
         for (const providedId of providedQuestionIds) {
             if (!validQuestionIds.has(providedId)) {
-                throw new Error(`Invalid question ID provided: ${providedId}`);
+                throw new ValidationError(`Invalid question ID provided: ${providedId}`);
             }
         }
 
-
-        // Use a transaction to ensure atomicity
         return prisma.$transaction(async (tx) => {
-            // 1. Find or create participant
-            let participant = await tx.participant.findUnique({
-                where: { email: registrationData.participant.email }
-            });
+            
+            const participant = await ParticipantService.findOrCreateParticipant(registrationData.participant, tx);
 
-            if (!participant) {
-                participant = await tx.participant.create({
-                    data: {
-                        ...registrationData.participant,
-                        // Ensure dateOfBirth is handled correctly (string vs Date)
-                        dateOfBirth: registrationData.participant.dateOfBirth ? new Date(registrationData.participant.dateOfBirth) : null,
-                    }
-                });
-            } else {
-                // Optionally update participant details if they already exist?
-                // For now, just use the existing participant.
-            }
-
-            // 2. Create Registration
             const registration = await tx.registration.create({
                 data: {
                     eventId: registrationData.eventId,
                     participantId: participant.id,
-                    // Link to user if participant is associated with a user account
                     userId: participant.userId,
-                    status: event.isFree ? 'CONFIRMED' : 'PENDING' // Conditional status based on event type
+                    status: event.isFree ? RegistrationStatus.CONFIRMED : RegistrationStatus.PENDING
                 }
             });
 
-            // 3. Handle Purchase and Ticket Update (if paid event)
-            let purchase = null;
-            if (!event.isFree && registrationData.ticketId && registrationData.quantity) {
-                const ticket = event.tickets.find(t => t.id === registrationData.ticketId);
-                if (!ticket) {
-                    // This check is technically redundant due to the earlier check, but good for safety
-                    throw new Error('Ticket not found within transaction');
-                }
-
-                // Create Purchase
-                purchase = await tx.purchase.create({
+            if (!event.isFree && registrationData.ticketId && registrationData.quantity && ticketForPurchase) {
+                 const currentTicketState = await tx.ticket.findUnique({ where: { id: registrationData.ticketId } });
+                 if (!currentTicketState || currentTicketState.quantitySold + registrationData.quantity > currentTicketState.quantityTotal) {
+                     throw new ValidationError('Ticket quantity became unavailable during registration.');
+                 }
+                await tx.purchase.create({
                     data: {
                         registrationId: registration.id,
                         ticketId: registrationData.ticketId,
                         quantity: registrationData.quantity,
-                        unitPrice: ticket.price,
-                        // Convert Decimal to number for calculation
-                        totalPrice: ticket.price.toNumber() * registrationData.quantity,
+                        unitPrice: ticketForPurchase.price,
+                        totalPrice: ticketForPurchase.price.toNumber() * registrationData.quantity,
                     }
                 });
-
-                // Update Ticket quantitySold
                 await tx.ticket.update({
                     where: { id: registrationData.ticketId },
-                    data: {
-                        quantitySold: {
-                            increment: registrationData.quantity
-                        }
-                    }
+                    data: { quantitySold: { increment: registrationData.quantity } }
                 });
-
-                // TODO: Potentially create a Payment record here or trigger payment flow
             }
 
-            // 4. Create Responses
             const responseCreates = registrationData.responses.map(response => {
                 const eventQuestion = event.eventQuestions.find(eq => eq.questionId === response.questionId);
                 if (!eventQuestion) {
-                    // Should not happen due to earlier validation
-                    throw new Error(`EventQuestion mapping not found for questionId: ${response.questionId}`);
+                    throw new Error(`Consistency error: EventQuestion mapping not found for questionId: ${response.questionId}`);
                 }
                 return tx.response.create({
                     data: {
                         registrationId: registration.id,
-                        eqId: eventQuestion.id, // Use the EventQuestions ID
+                        eqId: eventQuestion.id,
                         responseText: response.responseText
                     }
                 });
             });
-
             await Promise.all(responseCreates);
 
-            // Return the created registration with related data
-            return tx.registration.findUnique({
+            return tx.registration.findUniqueOrThrow({
                 where: { id: registration.id },
                 include: {
                     participant: true,
-                    event: true,
+                    event: { select: { id: true, name: true, isFree: true } },
                     purchase: { include: { ticket: true } },
                     responses: { include: { eventQuestion: { include: { question: true } } } }
                 }
@@ -192,63 +167,47 @@ export class RegistrationService {
     static async getRegistrations(query: GetRegistrationsQuery, authUser: JwtPayload) {
         const { eventId, userId, page, limit } = query;
         const skip = (page - 1) * limit;
-
         const where: Prisma.RegistrationWhereInput = {};
         let isAuthorized = false;
 
-        // Determine base authorization and filtering
         if (authUser.role === UserRole.ADMIN) {
-            isAuthorized = true; // Admin can see everything, apply filters directly
+            isAuthorized = true;
             if (eventId) where.eventId = eventId;
             if (userId) where.userId = userId;
         } else if (eventId) {
-            // Check if user is the organizer of the requested event
-            const event = await prisma.event.findUnique({
-                where: { id: eventId },
-                select: { organiserId: true }
-            });
+            const event = await prisma.event.findUnique({ where: { id: eventId }, select: { organiserId: true } });
             if (event && event.organiserId === authUser.userId) {
                 isAuthorized = true;
                 where.eventId = eventId;
-                // Organizer can optionally filter by userId within their event
                 if (userId) where.userId = userId;
             } else {
-                // Non-admin, non-organizer trying to filter by eventId - show only their own within that event
                 where.eventId = eventId;
-                where.userId = authUser.userId; // Restrict to own registrations within the event
-                isAuthorized = true; // Authorized to see their own
+                where.userId = authUser.userId;
+                isAuthorized = true;
             }
         } else if (userId) {
-            // Check if user is requesting their own registrations
             if (userId === authUser.userId) {
                 isAuthorized = true;
                 where.userId = userId;
             } else {
-                // If not admin and requesting someone else's userId, forbid
-                throw new AppError(403, 'Forbidden: You can only view your own registrations or event registrations if you are the organizer.');
+                throw new AuthorizationError('Forbidden: You can only view your own registrations.');
             }
         } else {
-            // No specific filters provided by non-admin, default to showing only their own
             isAuthorized = true;
             where.userId = authUser.userId;
         }
 
         if (!isAuthorized) {
-            // This case should ideally be caught by the logic above, but as a safeguard
-            throw new AppError(403, 'Forbidden: You do not have permission to view these registrations.');
+             throw new AuthorizationError('Forbidden: You do not have permission to view these registrations.');
         }
 
-        // Fetch registrations and total count
         const [registrations, totalCount] = await prisma.$transaction([
             prisma.registration.findMany({
-                where,
-                skip,
-                take: limit,
-                orderBy: { created_at: 'desc' },
+                where, skip, take: limit, orderBy: { created_at: 'desc' },
                 include: {
-                    participant: true, // Include participant details
-                    event: { select: { id: true, name: true, organiserId: true } }, // Include basic event details + organiserId for auth checks
-                    purchase: { include: { ticket: true } } // Include purchase and ticket details
+                    participant: { select: { id: true, firstName: true, lastName: true, email: true } },
+                    event: { select: { id: true, name: true, organiserId: true } },
+                    purchase: { include: { ticket: { select: { id: true, name: true } } } }
                 }
             }),
             prisma.registration.count({ where })
@@ -264,28 +223,100 @@ export class RegistrationService {
         const registration = await prisma.registration.findUnique({
             where: { id: registrationId },
             include: {
-                participant: true,
-                event: { select: { id: true, name: true, organiserId: true } }, // Need organiserId for auth
+                participant: true, // Include full participant for potential userId check
+                event: { select: { id: true, name: true, organiserId: true } },
                 purchase: { include: { ticket: true } },
-                responses: { include: { eventQuestion: { include: { question: true } } } } // Include responses
+                responses: { include: { eventQuestion: { include: { question: true } } } }
             }
         });
 
         if (!registration) {
-            throw new AppError(404, 'Registration not found');
+            throw new NotFoundError('Registration not found'); // Use NotFoundError
         }
 
-        // Authorization Check
-        const isOwner = registration.userId === authUser.userId;
+        const isOwner = registration.userId === authUser.userId ||
+                       (registration.participant?.userId !== null && registration.participant?.userId === authUser.userId);
         const isEventOrganizer = registration.event.organiserId === authUser.userId;
         const isAdmin = authUser.role === UserRole.ADMIN;
 
         if (!isOwner && !isEventOrganizer && !isAdmin) {
-            throw new AppError(403, 'Forbidden: You do not have permission to view this registration.');
+            throw new AuthorizationError('Forbidden: You do not have permission to view this registration.');
         }
 
         return registration;
     }
 
-    // TODO: Add methods for cancelRegistration etc.
+     /**
+     * Cancels a registration by ID, performing authorization checks.
+     * @param registrationId The ID of the registration to cancel.
+     * @param requestingUser The authenticated user attempting the cancellation.
+     */
+    static async cancelRegistration(registrationId: number, requestingUser: JwtPayload) {
+        const registration = await prisma.registration.findUnique({
+            where: { id: registrationId },
+            include: {
+                event: { select: { id: true, isFree: true } },
+                purchase: { include: { ticket: true } },
+                participant: { select: { userId: true } }, // Include participant userId for ownership check
+                user: { select: { id: true } } // Include registration's direct userId link as well
+            }
+        });
+
+        if (!registration) {
+            throw new NotFoundError('Registration not found'); // Use NotFoundError
+        }
+
+        const isAdmin = requestingUser.role === UserRole.ADMIN;
+        // Check if the registration's linked user OR the participant's linked user matches
+        const isOwner = registration.userId === requestingUser.userId ||
+                       (registration.participant?.userId !== null && registration.participant?.userId === requestingUser.userId);
+
+        if (!isAdmin && !isOwner) {
+            throw new AuthorizationError('Forbidden: You do not have permission to cancel this registration.');
+        }
+
+        if (registration.status === RegistrationStatus.CANCELLED) {
+             return registration; // Already cancelled, return current state
+        }
+
+        // Only allow cancellation if CONFIRMED or PENDING
+        if (registration.status !== RegistrationStatus.CONFIRMED && registration.status !== RegistrationStatus.PENDING) {
+             throw new ValidationError(`Cannot cancel registration with status: ${registration.status}`);
+        }
+
+
+        return prisma.$transaction(async (tx) => {
+            const updatedRegistration = await tx.registration.update({
+                where: { id: registrationId },
+                data: { status: RegistrationStatus.CANCELLED },
+                 include: { // Re-include necessary data for the response object
+                    participant: true,
+                    event: { select: { id: true, name: true, isFree: true } },
+                    purchase: { include: { ticket: true } },
+                    responses: { include: { eventQuestion: { include: { question: true } } } }
+                }
+            });
+
+            // If it was a paid event and CONFIRMED/PENDING, decrement ticket quantitySold
+            if (!registration.event.isFree && registration.purchase && registration.purchase.ticket) {
+                // Check ticket exists before decrementing (safety)
+                 const ticketExists = await tx.ticket.findUnique({ where: { id: registration.purchase.ticketId } });
+                 if (ticketExists) {
+                     await tx.ticket.update({
+                         where: { id: registration.purchase.ticketId },
+                         data: {
+                             quantitySold: {
+                                 decrement: registration.purchase.quantity
+                             }
+                         }
+                     });
+                 } else {
+                      console.warn(`Ticket ID ${registration.purchase.ticketId} not found during cancellation for registration ${registrationId}. Quantity not decremented.`);
+                 }
+                 // TODO: Implement refund logic here in a future step
+            }
+
+            return updatedRegistration;
+        });
+    }
 }
