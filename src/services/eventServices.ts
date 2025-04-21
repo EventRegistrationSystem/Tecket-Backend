@@ -178,7 +178,8 @@ export class EventService {
         }
 
         //2.6 - Free event filter
-        if (filters.isFree) {
+        // Check if the filter is explicitly provided (true or false), not just truthy
+        if (filters.isFree !== undefined) {
             where.isFree = filters.isFree;
         }
 

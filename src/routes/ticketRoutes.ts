@@ -54,8 +54,8 @@ router.get('/events/:eventId/tickets', TicketController.getTicketsByEvent);
  * @openapi
  * /events/{eventId}/tickets/{ticketId}:
  *   get:
- *     summary: Get ticket by ID
- *     description: Retrieve a specific ticket by its ID
+ *     summary: Get a specific ticket for an event
+ *     description: Retrieve details for a specific ticket type associated with an event.
  *     tags: [Tickets]
  *     parameters:
  *       - in: path
@@ -82,16 +82,64 @@ router.get('/events/:eventId/tickets', TicketController.getTicketsByEvent);
  *                   type: boolean
  *                   example: true
  *                 data:
- *                   $ref: '#/components/schemas/TicketDetailResponse'
+ *                   $ref: '#/components/schemas/TicketDetailResponse' # Assuming TicketDetailResponse exists
  *       404:
  *         description: Ticket or event not found
  *       500:
  *         description: Server error
  */
-router.get('/tickets/:id', TicketController.getTicketById);
+router.get('/events/:eventId/tickets/:ticketId', TicketController.getTicketById);
 
-
-router.get('/tickets/:id/availability', TicketController.checkAvailability);
+/**
+ * @openapi
+ * /events/{eventId}/tickets/{ticketId}/availability:
+ *   get:
+ *     summary: Check ticket availability
+ *     description: Check if a specific ticket type for an event is currently available for purchase.
+ *     tags: [Tickets]
+ *     parameters:
+ *       - in: path
+ *         name: eventId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Event ID
+ *       - in: path
+ *         name: ticketId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Ticket ID
+ *     responses:
+ *       200:
+ *         description: Ticket availability status
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     available:
+ *                       type: boolean
+ *                       example: true
+ *                     availableQuantity:
+ *                       type: integer
+ *                       example: 35
+ *                     reason:
+ *                       type: string
+ *                       nullable: true
+ *                       example: "Sold out"
+ *       404:
+ *         description: Ticket or event not found
+ *       500:
+ *         description: Server error
+ */
+router.get('/events/:eventId/tickets/:ticketId/availability', TicketController.checkAvailability);
 
 // Protected routes (require authentication)
 /**
@@ -199,10 +247,10 @@ router.post('/events/:eventId/tickets',
  *       500:
  *         description: Server error
  */
-router.put('/tickets/:id',
+router.put('/events/:eventId/tickets/:ticketId',
     authenticate,
-    authorize('ORGANIZER'),
-    validateRequest(updateTicketSchema),
+    authorize('ORGANIZER'), // Authorization check: Only organizers
+    validateRequest(updateTicketSchema), // Validation check
     TicketController.updateTicket
 );
 
@@ -253,9 +301,9 @@ router.put('/tickets/:id',
  *       500:
  *         description: Server error
  */
-router.delete('/tickets/:id',
+router.delete('/events/:eventId/tickets/:ticketId',
     authenticate,
-    authorize('ORGANIZER'),
+    authorize('ORGANIZER'), // Authorization check: Only organizers
     TicketController.deleteTicket
 );
 
