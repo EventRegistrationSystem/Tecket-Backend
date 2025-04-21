@@ -6,7 +6,7 @@ import {
     getRegistrationParamsSchema
 } from '../validation/registrationValidation';
 import { RegistrationDto } from '../types/registrationTypes';
-import { AppError } from '../utils/errors'; // custom error handler
+import { AppError, AuthorizationError, ValidationError } from '../utils/errors'; // Import AuthorizationError and ValidationError
 
 export class RegistrationController {
     /**
@@ -18,9 +18,8 @@ export class RegistrationController {
             // 1. Validate request body
             const { error, value } = registrationValidationSchema.validate(req.body);
             if (error) {
-                
                 // Use status 400 for validation errors
-                throw new AppError(400, `Validation failed: ${error.details.map(x => x.message).join(', ')}`);
+                throw new ValidationError(`Validation failed: ${error.details.map(x => x.message).join(', ')}`);
             }
 
             const registrationData: RegistrationDto = value;
@@ -45,16 +44,17 @@ export class RegistrationController {
      * Retrieves a list of registrations based on query filters.
      * Requires authentication.
      */
-    static async getRegistrations(req: Request, res: Response, next: NextFunction): Promise<void> { // Changed type to Request
+    static async getRegistrations(req: Request, res: Response, next: NextFunction): Promise<void> {
         try {
             // 1. Validate query parameters
             const { error: queryError, value: queryValue } = getRegistrationsQuerySchema.validate(req.query);
             if (queryError) {
-                throw new AppError(400, `Invalid query parameters: ${queryError.details.map(x => x.message).join(', ')}`);
+                throw new ValidationError(`Invalid query parameters: ${queryError.details.map(x => x.message).join(', ')}`);
             }
 
             // Ensure req.user is populated by authentication middleware
             if (!req.user) {
+                // This should ideally be caught by middleware, but double-check
                 throw new AppError(401, 'Authentication required');
             }
 
@@ -83,12 +83,12 @@ export class RegistrationController {
      * Retrieves a single registration by its ID.
      * Requires authentication.
      */
-    static async getRegistrationById(req: Request, res: Response, next: NextFunction): Promise<void> { // Changed type to Request
+    static async getRegistrationById(req: Request, res: Response, next: NextFunction): Promise<void> {
         try {
             // 1. Validate path parameter
             const { error: paramsError, value: paramsValue } = getRegistrationParamsSchema.validate(req.params);
             if (paramsError) {
-                throw new AppError(400, `Invalid registration ID: ${paramsError.details.map(x => x.message).join(', ')}`);
+                throw new ValidationError(`Invalid registration ID: ${paramsError.details.map(x => x.message).join(', ')}`);
             }
 
             // Ensure req.user is populated
@@ -108,9 +108,46 @@ export class RegistrationController {
             });
 
         } catch (err) {
-            // Handle potential errors from service (e.g., NotFoundError, ForbiddenError)
-            // Or let the global error handler manage them based on AppError statusCode
             next(err);
+        }
+    }
+
+    /**
+     * Handle PATCH /registrations/:registrationId
+     * Cancels a specific registration.
+     */
+    static async cancelRegistration(req: Request, res: Response, next: NextFunction): Promise<void> {
+        try {
+            // 1. Validate path parameter
+             const { error: paramsError, value: paramsValue } = getRegistrationParamsSchema.validate(req.params);
+             if (paramsError) {
+                 throw new ValidationError(`Invalid registration ID: ${paramsError.details.map(x => x.message).join(', ')}`);
+             }
+             const { registrationId } = paramsValue;
+
+            // 2. Validate request body (ensure status is 'CANCELLED')
+            const status = req.body.status;
+            if (status !== 'CANCELLED') {
+                 throw new ValidationError("Invalid status update. Only 'CANCELLED' is allowed via this endpoint.");
+            }
+
+
+            // 3. Ensure user is authenticated
+            if (!req.user) {
+                throw new AppError(401, 'Authentication required');
+            }
+
+            // 4. Call the service method, passing the user object for authorization checks
+            const updatedRegistration = await RegistrationService.cancelRegistration(registrationId, req.user);
+
+            // 5. Send response
+            res.status(200).json({
+                message: 'Registration cancelled successfully',
+                data: updatedRegistration
+            });
+
+        } catch(err) {
+            next(err); // Pass error to global handler
         }
     }
 }
