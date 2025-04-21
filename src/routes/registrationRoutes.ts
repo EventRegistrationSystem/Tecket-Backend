@@ -335,4 +335,66 @@ router.get(
     RegistrationController.getRegistrationById
 );
 
-export default router; 
+/**
+ * @openapi
+ * /registrations/{registrationId}:
+ *   patch:
+ *     summary: Cancel Registration
+ *     description: Mark a registration as cancelled. Requires authentication. Allowed for the user who owns the registration or an admin.
+ *     tags: [Registrations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: registrationId
+ *         required: true
+ *         schema: { type: integer }
+ *         description: ID of the registration to cancel.
+ *     requestBody:
+ *       required: true
+ *       description: Specify the status update.
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [status]
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [CANCELLED] # Only allow cancelling via this endpoint
+ *                 example: CANCELLED
+ *     responses:
+ *       '200':
+ *         description: Registration cancelled successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Registration cancelled successfully"
+ *                 data:
+ *                   # Include the updated registration details
+ *                   $ref: '#/components/schemas/Registration' # Assuming a full Registration schema exists
+ *       '400':
+ *         description: Bad Request (Invalid ID, Invalid Status)
+ *       '401':
+ *         description: Unauthorized (Not logged in)
+ *       '403':
+ *         description: Forbidden (User does not own registration and is not admin)
+ *       '404':
+ *         description: Not Found (Registration not found)
+ *       '409': # Conflict status code
+ *         description: Conflict (e.g., Registration already cancelled)
+ *       '500':
+ *         description: Server Error
+ */
+router.patch(
+    '/:registrationId',
+    authenticate, // Ensure user is logged in
+    RegistrationController.cancelRegistration // Add the new controller method
+);
+
+
+export default router;
