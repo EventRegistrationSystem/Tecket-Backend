@@ -25,6 +25,14 @@ export class ValidationError extends AppError {
     }
 }
 
+// Not Found error class for resource not found
+export class NotFoundError extends AppError {
+    constructor(message: string = 'Resource not found') {
+        super(404, message); // 404 Not Found
+        this.name = 'NotFoundError';
+    }
+}
+
 // Authorization error class for permission denied
 export class AuthorizationError extends AppError {
     constructor(message: string = 'Permission denied') {
