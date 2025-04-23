@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Request, Response, Router } from 'express';
 import { AuthController } from '../controllers/authController';
 import { authenticate } from '../middlewares/authMiddlewares';
 import { validateRequest } from '../middlewares/authMiddlewares';
@@ -220,5 +220,17 @@ router.post('/logout', authenticate, AuthController.logout);
  *       500:
  *         description: Server error
  */
-router.post('/refresh-token', AuthController.refreshToken);
+// Define a wrapper function to handle potential type inference issues
+const handleRefreshToken = (req: Request, res: Response) => {
+    AuthController.refreshToken(req, res).catch(error => {
+        // Basic error handling for the promise rejection,
+        // although the controller already has internal try/catch
+        console.error("Error in handleRefreshToken wrapper:", error);
+        if (!res.headersSent) {
+            res.status(500).json({ success: false, message: 'Internal server error from wrapper' });
+        }
+    });
+};
+
+router.post('/refresh-token', handleRefreshToken);
 export default router;
