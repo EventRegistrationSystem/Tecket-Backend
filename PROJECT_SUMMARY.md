@@ -1,6 +1,6 @@
 # Project Summary: Event Registration System Backend
 
-**Last Updated:** 21/04/2025
+**Last Updated:** 22/04/2025
 
 ## 1. Project Purpose and Core Functionalities
 
@@ -10,8 +10,8 @@ To provide a robust backend API for managing events, registrations, tickets, and
 **Core Functionalities:**
 *   **User Management:** Authentication (JWT-based), authorization (Role-Based Access Control: PARTICIPANT, ORGANIZER, ADMIN), profile management (get/update), password management.
 *   **Event Management:** Full CRUD operations, status management (draft, published, cancelled, completed), support for free/paid events, advanced filtering/search, role-based visibility, dynamic question updates.
-*   **Ticket Management:** Creation/management of ticket types per event, pricing, availability checks, sales periods, validation against sold quantities.
-*   **Registration System:** Supports both registered users and guest participants, linking participants to events. Handles conditional status (`PENDING` for paid, `CONFIRMED` for free).
+*   **Ticket Management:** Creation/management of ticket types per event, pricing, availability checks, sales periods, validation against sold quantities, ownership authorization checks.
+*   **Registration System:** Supports both registered users and guest participants, linking participants to events. Handles conditional status (`PENDING` for paid, `CONFIRMED` for free). Basic registration cancellation implemented.
 *   **Questionnaire Management:** Custom questions per event, response collection from participants during registration.
 *   **Payment Processing:** (Planned) Secure handling of payments for paid event tickets.
 *   **Reporting & Analytics:** (Planned) Data collection to support future reporting for organizers/admins.
@@ -38,7 +38,7 @@ Layered Architecture:
 
 **Key Database Entities (`prisma/schema.prisma`):**
 *   `User`: Authenticated users (organizers, admins, participants with accounts).
-*   `Participant`: Stores profile info for *all* participants (guests or registered users). Linked to `User` if applicable. (Note: Renamed from ParticipantProfile for clarity based on schema).
+*   `Participant`: Stores profile info for *all* participants (guests or registered users). Linked to `User` if applicable.
 *   `Event`: Event details, including `isFree` flag.
 *   `Ticket`: Ticket types for paid events (linked to `Event`).
 *   `Question`: Custom questions.
@@ -65,63 +65,63 @@ Standard structure for a Node.js/Express/TypeScript project:
 │   ├── __tests__/      # Unit tests (Jest)
 │   ├── app.ts          # Express application setup
 │   └── server.ts       # Server entry point
+├── summaries/          # Contains markdown summaries of work done
 ├── .env.example        # Environment variable template
 ├── jest.config.ts      # Jest configuration
 ├── package.json
 └── tsconfig.json
 ```
+*(Added `summaries/` directory)*
 
-## 4. Implemented Features (as of Sprint 3, Week 1)
+## 4. Implemented Features (as of Sprint 3, Week 2)
 
 *   **Authentication:** User registration, login, JWT generation/validation, refresh tokens, role-based access control middleware (`src/middlewares/authMiddlewares.ts`).
 *   **User Profile:** Fetching, updating user profiles, and password updates implemented and unit tested (`src/controllers/userController.ts`, `src/services/userServices.ts`, `src/__tests__/unit/userService.test.ts`).
-*   **Event Management:** Full CRUD, status transitions, free/paid event distinction (`isFree` flag), role-based visibility and filtering. Refined logic for updating associated questions (`src/controllers/eventController.ts`, `src/services/eventServices.ts`). Basic unit tests exist.
-*   **Ticket Management:** CRUD for ticket types associated with events, pricing, availability checks, sales period handling, validation (`src/controllers/ticketController.ts`, `src/services/ticketServices.ts`). Good unit test coverage.
-*   **Registration System:** Creation implemented for guests/users, handling conditional status (`PENDING`/`CONFIRMED`). Retrieval with authorization implemented. Unit tested (`src/controllers/registrationController.ts`, `src/services/registrationServices.ts`, `src/__tests__/unit/registrationService.test.ts`).
+*   **Event Management:** Full CRUD, status transitions, free/paid event distinction (`isFree` flag), role-based visibility and filtering. Refined logic for updating associated questions (`src/controllers/eventController.ts`, `src/services/eventServices.ts`). **Enhanced unit test coverage** (`src/__tests__/unit/eventService.test.ts`).
+*   **Ticket Management:** CRUD for ticket types associated with events, pricing, availability checks, sales period handling, validation. **Routes refactored** for consistency (`/events/:eventId/tickets/:ticketId`). **Ownership authorization added** to service layer (`src/controllers/ticketController.ts`, `src/services/ticketServices.ts`). Good unit test coverage (`src/__tests__/unit/ticketService.test.ts`).
+*   **Registration System:** Creation implemented for guests/users, handling conditional status (`PENDING`/`CONFIRMED`). Retrieval with authorization implemented. **Basic cancellation implemented** (`PATCH /registrations/:registrationId`) allowing owner/admin to cancel, including decrementing ticket count for paid events. Unit tested (`src/controllers/registrationController.ts`, `src/services/registrationServices.ts`, `src/__tests__/unit/registrationService.test.ts`).
 *   **Database:** Schema defined (`prisma/schema.prisma`), migrations applied (`prisma/migrations/`), seeding script (`prisma/seed.ts`).
 *   **Basic Setup:** Project structure, dependencies, TypeScript config, Jest setup (`src/__tests__/setup.ts`) including test DB cleanup logic.
-*   **API Documentation:** Basic Swagger setup (`src/config/swagger.ts`) exists, needs population/refinement.
+*   **API Documentation:** Basic Swagger setup (`src/config/swagger.ts`) exists, needs population/refinement. Route comments updated for tickets.
+*   **Custom Errors:** Added `AuthorizationError` and `NotFoundError` to `src/utils/errors.ts`.
 
 ## 5. Known Issues, Limitations & Technical Debt
 
-*   **Event Service Testing:** Unit test coverage needs enhancement, especially for `updateEvent` (ticket/question logic), `getAllEvents` filtering, and `getEventById`/`getEventWithDetails`.
-*   **Registration Features:** Cancellation and update functionality not yet implemented. Payment processing integration is pending.
-*   **Ticket Routes:** Need review to ensure all service functions are exposed correctly with proper authorization.
-*   **Validation Gaps:** Some edge cases in input validation might not be covered. Registration validation schema needs review against service logic.
+*   **Registration Features:** Full registration *updates* not implemented. Cancellation logic does not yet include *refund processing* for paid events.
+*   **Validation Gaps:** Registration validation schema still needs review against service logic edge cases. Other minor validation gaps might exist.
 *   **Admin Features:** Admin user management endpoints are defined in routes but not implemented (deferred).
 *   **Integration Testing:** No integration tests currently exist.
-*   **Error Handling:** Basic error handling exists, but could be standardized further.
+*   **Error Handling:** Could be standardized further across all services/controllers.
 *   **Logging:** Minimal logging implemented.
 *   **Image Uploads:** No functionality for handling image uploads.
 *   **Notifications:** No email or other notification system implemented.
+*   **Participant Service:** Minimal implementation (`findOrCreateParticipant` only). Lacks dedicated get/update methods.
 
 ## 6. Immediate Next Steps & Future Development Plan
 
-**Current Focus (Sprint 3):**
-*   **Enhance Event Service Test Coverage:** Add tests for `updateEvent` question/ticket logic, `getEventById`/`getEventWithDetails`, `getAllEvents` filtering.
-*   **Review Ticket Routes:** Ensure endpoints match service capabilities and have correct authorization.
-*   **Review Registration Validation:** Align validation schema with service logic.
-*   **Implement Basic Registration Cancellation:** Add route, controller, service logic (status change, ticket quantity adjustment), and unit tests.
-*   **(If time permits / Deployment Unblocked):** Begin deployment setup on Render (Web Service, DB, Env Vars, Migrations).
+**Current Focus (End of Sprint 3 / Start of Sprint 4):**
+*   **Review Registration Validation:** Align validation schema (`src/validation/registrationValidation.ts`) with service logic (`src/services/registrationServices.ts`). (High Priority)
 
-**Future Development Plan (Post-Sprint 3 / Post-Initial Testing):**
-*   **Payment Processing:** Integrate payment gateway, implement verification and refunds. Link to Registration status/Purchase.
-*   **Registration Updates/Cancellation:** Implement full cancellation (with refund logic) and potentially registration updates.
-*   **Email Notifications:** For registrations, event updates, password resets, etc.
-*   **Admin User Management:** Implement deferred admin endpoints.
-*   **Reporting System:** Basic reports for organizers (attendance, sales).
-*   **Integration Testing:** Add tests for key user flows.
-*   **Advanced Features:** Advanced reporting, image uploads, etc.
-*   **Frontend Integration:** Support frontend development efforts.
+**Future Development Plan (Prioritized based on existing Frontend):**
+1.  **Payment Processing:** Integrate payment gateway, implement verification (webhooks), link to `Purchase`, update `Registration` status. (Very High Priority)
+2.  **Admin User Management:** Implement deferred admin endpoints for user management needed by admin dashboard. (High Priority)
+3.  **Email Notifications:** Implement email sending for key user flows (registration, cancellation, password reset). (High Priority)
+4.  **Full Registration Updates/Cancellation (Refunds):** Enhance cancellation with refund logic. Decide on/implement registration updates if needed. (Medium Priority)
+5.  **Integration Testing:** Add API-level tests for key user flows. (Medium Priority - Ongoing)
+6.  **Deployment:** Plan and begin setup on Render (Web Service, DB, Env Vars, Migrations). (Medium Priority - Ongoing)
+7.  **Reporting System (Basic):** Implement basic organizer reports if required by admin dashboard, otherwise potentially defer. (Low/Medium Priority)
+8.  **Refine API & Support Frontend:** Address any specific data needs or endpoint adjustments identified during frontend refinement. (Ongoing)
+9.  **Advanced Features:** Advanced reporting, image uploads, etc. (Lower Priority)
 
 ## 7. Critical Design Decisions & Tradeoffs
 
 *   **Participant Model:** Using a single `Participant` model linked optionally to `User` supports guest registration.
 *   **Explicit `isFree` Flag:** Added `isFree` boolean to `Event` model for clarity.
 *   **Conditional Registration Status:** Using `PENDING` for paid events until payment is implemented.
-*   **Transaction-Based Operations:** Using Prisma transactions for multi-entity operations (event creation, registration, event update).
-*   **Multi-Level Validation:** Validation at route middleware, service layer, and database constraints.
+*   **Transaction-Based Operations:** Using Prisma transactions for multi-entity operations (event creation, registration, event update, registration cancellation).
+*   **Multi-Level Validation:** Validation at route middleware (Joi), service layer (business rules), and database constraints.
 *   **JWT Authentication:** Using JWT with refresh tokens stored in HTTP-only cookies.
+*   **Ownership Authorization:** Implemented primarily in the service layer by passing `userId` and checking against resource owner IDs (e.g., `event.organiserId`).
 
 ## 8. Environment Setup
 

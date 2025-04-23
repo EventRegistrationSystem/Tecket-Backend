@@ -33,8 +33,8 @@ export class AuthController {
 
             if (error instanceof ValidationError) {
                 // Specific handling for validation errors (e.g., email already exists)
-                // Consider using 409 Conflict if the ValidationError specifically means "already exists"
-                res.status(error.statusCode).json({ // Use statusCode from error
+
+                res.status(error.statusCode).json({
                     success: false,
                     message: error.message,
                     error: process.env.NODE_ENV !== 'production' ? String(error) : undefined
