@@ -243,8 +243,10 @@ model Purchase {
 model Payment {
   id            Int           @id @default(autoincrement()) @map("id")
   purchaseId    Int           @unique @map("purchase_id")
+  stripePaymentIntentId  String        @unique @map("stripe_payment_intent_id") 
   amount        Decimal       @db.Decimal(10, 2)
-  paymentMethod PaymentMethod @map("payment_method")
+  currency               String        // Added for Stripe (e.g., "aud", "usd")
+  paymentMethod PaymentMethod @map("payment_method") // Keep for now, might adjust later based on Stripe methods used
   status        PaymentStatus @default(PENDING) @map("status")
 
   createdAt DateTime @default(now()) @map("created_at")
