@@ -14,9 +14,9 @@
     /* Type Checking */
     "strict": true,                                      /* Enable all strict type-checking options. */
     "skipLibCheck": true,                                 /* Skip type checking all .d.ts files. */
-    "types": ["node", "jest"],                               /* Type declaration files to be included in the compilation. */
+    "types": ["node"],                               /* Type declaration files to be included in the compilation. */
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/__tests__"]
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/__tests__/**"]
 
 }
