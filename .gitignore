@@ -3,6 +3,7 @@ node_modules
 
 /.idea
 /coverage
+/dist
 
 # pdf files
 *.pdf

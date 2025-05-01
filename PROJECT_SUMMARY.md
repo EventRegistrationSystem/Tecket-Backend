@@ -1,6 +1,6 @@
 # Project Summary: Event Registration System Backend
 
-**Last Updated:** 22/04/2025
+**Last Updated:** 30/04/2025
 
 ## 1. Project Purpose and Core Functionalities
 
@@ -13,7 +13,7 @@ To provide a robust backend API for managing events, registrations, tickets, and
 *   **Ticket Management:** Creation/management of ticket types per event, pricing, availability checks, sales periods, validation against sold quantities, ownership authorization checks.
 *   **Registration System:** Supports both registered users and guest participants, linking participants to events. Handles conditional status (`PENDING` for paid, `CONFIRMED` for free). Basic registration cancellation implemented.
 *   **Questionnaire Management:** Custom questions per event, response collection from participants during registration.
-*   **Payment Processing:** (Planned) Secure handling of payments for paid event tickets.
+*   **Payment Processing:** (In Progress - Stripe Backend Setup) Secure handling of payments for paid event tickets using Stripe.
 *   **Reporting & Analytics:** (Planned) Data collection to support future reporting for organizers/admins.
 
 ## 2. Technology Stack
@@ -26,6 +26,7 @@ To provide a robust backend API for managing events, registrations, tickets, and
 *   **Authentication:** JWT (JSON Web Tokens) with Refresh Tokens (stored in HTTP-only cookies), bcrypt for password hashing.
 *   **Validation:** Joi (Schema validation used in middleware).
 *   **Testing:** Jest (Unit tests with Prisma/bcrypt mocks).
+*   **Payment Gateway:** Stripe (using Stripe Node.js SDK)
 
 ## 3. Architecture and Component Structure
 
@@ -46,7 +47,7 @@ Layered Architecture:
 *   `Registration`: Links `Participant` to `Event`, stores `status`.
 *   `Response`: Participant answers to `EventQuestions` (linked to `Registration`).
 *   `Purchase`: Records ticket purchases for paid events (linked to `Registration` and `Ticket`).
-*   `Payment`: (Planned) Records payment details (linked to `Purchase`).
+*   `Payment`: Records payment details, linked to `Purchase`. Includes `stripePaymentIntentId` and `currency` for Stripe integration.
 
 **Directory Structure:**
 Standard structure for a Node.js/Express/TypeScript project:
@@ -84,6 +85,15 @@ Standard structure for a Node.js/Express/TypeScript project:
 *   **Basic Setup:** Project structure, dependencies, TypeScript config, Jest setup (`src/__tests__/setup.ts`) including test DB cleanup logic.
 *   **API Documentation:** Basic Swagger setup (`src/config/swagger.ts`) exists, needs population/refinement. Route comments updated for tickets.
 *   **Custom Errors:** Added `AuthorizationError` and `NotFoundError` to `src/utils/errors.ts`.
+*   **Stripe Payment Backend Setup (Test Mode):**
+    *   Added Stripe dependencies (`stripe`, `@types/stripe`).
+    *   Configured environment variables (`.env.example`) for Stripe keys.
+    *   Updated `Payment` model in Prisma schema (`stripePaymentIntentId`, `currency`) and migrated database.
+    *   Created payment types (`src/types/paymentTypes.ts`).
+    *   Implemented core payment service logic (`src/services/paymentServices.ts`) for creating Stripe Payment Intents (`createPaymentIntent`) and handling basic webhook events (`handleWebhookEvent` for success/failure).
+    *   Created payment controller (`src/controllers/paymentController.ts`) with handlers for intent creation and webhook processing.
+    *   Defined payment routes (`src/routes/paymentRoutes.ts`) for `/create-intent` and `/webhook/stripe`.
+    *   Integrated payment routes into `app.ts`, ensuring correct middleware order (`express.raw()` before `express.json()`) for webhook endpoint.
 
 ## 5. Known Issues, Limitations & Technical Debt
 
@@ -96,6 +106,7 @@ Standard structure for a Node.js/Express/TypeScript project:
 *   **Image Uploads:** No functionality for handling image uploads.
 *   **Notifications:** No email or other notification system implemented.
 *   **Participant Service:** Minimal implementation (`findOrCreateParticipant` only). Lacks dedicated get/update methods.
+*   **Payment Module:** Requires thorough testing (unit and integration), input validation, authorization checks, and frontend integration. Potential TypeScript environment issues (Stripe/Prisma type resolution) noted during development need verification.
 
 ## 6. Immediate Next Steps & Future Development Plan
 
@@ -103,7 +114,7 @@ Standard structure for a Node.js/Express/TypeScript project:
 *   **Review Registration Validation:** Align validation schema (`src/validation/registrationValidation.ts`) with service logic (`src/services/registrationServices.ts`). (High Priority)
 
 **Future Development Plan (Prioritized based on existing Frontend):**
-1.  **Payment Processing:** Integrate payment gateway, implement verification (webhooks), link to `Purchase`, update `Registration` status. (Very High Priority)
+1.  **Complete Payment Processing:** Test backend endpoints, implement validation/authorization, integrate frontend (Stripe Elements), implement refund logic if required. (Very High Priority)
 2.  **Admin User Management:** Implement deferred admin endpoints for user management needed by admin dashboard. (High Priority)
 3.  **Email Notifications:** Implement email sending for key user flows (registration, cancellation, password reset). (High Priority)
 4.  **Full Registration Updates/Cancellation (Refunds):** Enhance cancellation with refund logic. Decide on/implement registration updates if needed. (Medium Priority)
