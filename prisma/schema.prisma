@@ -240,7 +240,8 @@ model Ticket {
 
   // Relations
   event     Event      @relation(fields: [eventId], references: [id])
-  purchases Purchase[]
+  // purchases Purchase[] // Removed direct relation to Purchase
+  purchaseItems PurchaseItem[] // Added relation to PurchaseItem
 
   @@map("tickets")
 }
@@ -248,20 +249,36 @@ model Ticket {
 model Purchase {
   id             Int     @id @default(autoincrement()) @map("id")
   registrationId Int     @unique @map("registration_id")
-  ticketId       Int     @unique @map("ticket_id")
-  quantity       Int
-  unitPrice      Decimal @map("unit_price") @db.Decimal(10, 2)
-  totalPrice     Decimal @map("total_price") @db.Decimal(10, 2)
+  // ticketId       Int     @unique @map("ticket_id") // Removed
+  // quantity       Int // Removed
+  // unitPrice      Decimal @map("unit_price") @db.Decimal(10, 2) // Removed
+  totalPrice     Decimal @map("total_price") @db.Decimal(10, 2) // Keep total for the overall purchase
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt() @map("updated_at")
 
   // Relations
   registration Registration @relation(fields: [registrationId], references: [id])
-  ticket       Ticket       @relation(fields: [ticketId], references: [id])
+  // ticket       Ticket       @relation(fields: [ticketId], references: [id]) // Removed relation
   payment      Payment?
+  items        PurchaseItem[] // Added relation to PurchaseItem
 
   @@map("purchases")
+}
+
+// New model for individual items within a purchase
+model PurchaseItem {
+  id        Int     @id @default(autoincrement())
+  purchaseId Int     @map("purchase_id")
+  ticketId   Int     @map("ticket_id")
+  quantity   Int
+  unitPrice  Decimal @map("unit_price") @db.Decimal(10, 2) // Price per ticket at time of purchase
+
+  // Relations
+  purchase Purchase @relation(fields: [purchaseId], references: [id])
+  ticket   Ticket   @relation(fields: [ticketId], references: [id])
+
+  @@map("purchase_items")
 }
 
 model Payment {
