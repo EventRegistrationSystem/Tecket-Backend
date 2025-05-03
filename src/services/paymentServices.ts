@@ -7,7 +7,7 @@ import { CreatePaymentIntentDto, CreatePaymentIntentResponse, StripeWebhookEvent
 // Initialize Stripe with the secret key from environment variables
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
 if (!stripeSecretKey) {
-  throw new Error('Stripe secret key not found in environment variables.');
+  throw new AppError(400, 'Stripe secret key not found in environment variables.');
 }
 const stripe = new Stripe(stripeSecretKey, {
   apiVersion: '2025-03-31.basil', // Use the latest API version
@@ -68,20 +68,20 @@ export const createPaymentIntent = async (data: CreatePaymentIntentDto): Promise
       // Optional: Check if paymentIntent status allows confirmation (e.g., requires_payment_method)
       // If already succeeded, maybe throw error or return existing success status?
       if (paymentIntent.status === 'succeeded') {
-         throw new AppError(400, 'Payment has already succeeded for this registration.');
+        throw new AppError(400, 'Payment has already succeeded for this registration.');
       }
       // If needs update (e.g. amount changed - less common for simple checkout)
       // paymentIntent = await stripe.paymentIntents.update(payment.stripePaymentIntentId, { amount: amountInCents });
 
     } catch (error: any) {
-       console.error(`Failed to retrieve or update PaymentIntent ${payment.stripePaymentIntentId}:`, error);
-       // Decide how to handle - maybe create a new one if retrieval fails badly?
-       // For now, rethrow or handle specific Stripe errors
-       throw new AppError(500, `Failed to process existing payment intent: ${error.message}`);
+      console.error(`Failed to retrieve or update PaymentIntent ${payment.stripePaymentIntentId}:`, error);
+      // Decide how to handle - maybe create a new one if retrieval fails badly?
+      // For now, rethrow or handle specific Stripe errors
+      throw new AppError(500, `Failed to process existing payment intent: ${error.message}`);
     }
 
   } else {
-     // 4. Create a new Stripe Payment Intent
+    // 4. Create a new Stripe Payment Intent
     try {
       paymentIntent = await stripe.paymentIntents.create({
         amount: amountInCents,
@@ -93,7 +93,7 @@ export const createPaymentIntent = async (data: CreatePaymentIntentDto): Promise
           eventId: registration.eventId.toString(),
         },
         // Consider adding payment_method_types if needed, e.g., ['card']
-        // automatic_payment_methods: { enabled: true }, // Often simpler
+        // automatic_payment_methods: { enabled: true }, 
       });
 
       // 5. Create or Update Payment Record in DB
@@ -127,7 +127,7 @@ export const createPaymentIntent = async (data: CreatePaymentIntentDto): Promise
 
 
   if (!paymentIntent.client_secret) {
-     throw new AppError(500, 'Failed to get client secret from Stripe Payment Intent');
+    throw new AppError(500, 'Failed to get client secret from Stripe Payment Intent');
   }
 
   // 6. Return client secret and internal payment ID
@@ -176,9 +176,9 @@ const processPaymentSuccess = async (paymentIntent: Stripe.PaymentIntent): Promi
   const registrationId = paymentIntent.metadata?.registrationId;
 
   if (!registrationId) {
-     console.error(`Webhook Error: Missing registrationId in metadata for PaymentIntent ${paymentIntentId}`);
-     // Potentially query Payment table by stripePaymentIntentId if metadata missing?
-     return; // Acknowledge webhook but log error
+    console.error(`Webhook Error: Missing registrationId in metadata for PaymentIntent ${paymentIntentId}`);
+    // Potentially query Payment table by stripePaymentIntentId if metadata missing?
+    return; // Acknowledge webhook but log error
   }
 
   try {
@@ -213,9 +213,9 @@ const processPaymentSuccess = async (paymentIntent: Stripe.PaymentIntent): Promi
       const registrationIdInt = parseInt(registrationId, 10); // Parse once
       // Ensure the registrationId from metadata matches the payment's linked registration
       if (payment.purchase?.registrationId !== registrationIdInt) {
-         console.error(`Webhook Error: Metadata registrationId (${registrationId}) does not match payment's registrationId (${payment.purchase?.registrationId}) for PaymentIntent ${paymentIntentId}`);
-         // Throw error to rollback transaction? Or just log?
-         throw new Error("Registration ID mismatch in webhook processing.");
+        console.error(`Webhook Error: Metadata registrationId (${registrationId}) does not match payment's registrationId (${payment.purchase?.registrationId}) for PaymentIntent ${paymentIntentId}`);
+        // Throw error to rollback transaction? Or just log?
+        throw new Error("Registration ID mismatch in webhook processing.");
       }
 
       await tx.registration.update({
@@ -257,8 +257,8 @@ const processPaymentFailure = async (paymentIntent: Stripe.PaymentIntent): Promi
 
     // Idempotency check: If already failed or completed, do nothing
     if (payment.status === PaymentStatus.FAILED || payment.status === PaymentStatus.COMPLETED) {
-       console.log(`Webhook Info: Payment ${payment.id} already marked as ${payment.status}. Skipping failure update.`);
-       return;
+      console.log(`Webhook Info: Payment ${payment.id} already marked as ${payment.status}. Skipping failure update.`);
+      return;
     }
 
     // Update Payment status
