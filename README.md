@@ -6,9 +6,12 @@ This project provides the backend API for an event management system that allows
 ## Prerequisites
 Before setting up the project, ensure you have the following installed:
 
-- [Node.js](https://nodejs.org/) (v16.x or higher)
-- [MySQL](https://dev.mysql.com/downloads/) server
-- npm or yarn
+- **Node.js:** v16.x or higher. It's recommended to use a Node Version Manager like [nvm](https://github.com/nvm-sh/nvm) to easily manage Node versions.
+- **MySQL Server:**
+    - **macOS:** Use [Homebrew](https://brew.sh/) (`brew install mysql`).
+    - **Linux (Debian/Ubuntu):** `sudo apt update && sudo apt install mysql-server`.
+    - **Windows:** Download the official installer from [MySQL Downloads](https://dev.mysql.com/downloads/installer/).
+- **npm** (usually comes with Node.js) or **yarn**.
 
 ## Development Environment Setup
 ### 1. Clone the Repository
@@ -47,19 +50,33 @@ NODE_ENV=development
 # Authentication
 JWT_SECRET="your-secret-jwt-key"
 REFRESH_TOKEN_SECRET="your-secret-refresh-token-key"
+
+# Stripe Configuration (Required for Payment Processing)
+STRIPE_SECRET_KEY="sk_test_..." # Your Stripe Secret Key
+STRIPE_PUBLISHABLE_KEY="pk_test_..." # Your Stripe Publishable Key
+STRIPE_WEBHOOK_SECRET="whsec_..." # Your Stripe Webhook Signing Secret (for handling webhook events)
+
+# Seeding Configuration (Optional - for initial admin user)
+SEED_ADMIN_EMAIL="admin@example.com"
+SEED_ADMIN_PASSWORD="Admin123!"
 ```
 
-### 4. Set up database and sample data
+### 4. Initial Project Setup (Install Dependencies & Configure Database)
+
+Run the following command to install project dependencies and set up the database:
 
 ```bash
 npm run setup:dev
 ```
 
-This script will:
+This command performs two main actions:
+1.  `npm install`: Installs all necessary Node.js packages defined in `package.json`.
+2.  `npm run db:setup`: Configures the database by:
+    - Generating the Prisma Client (`prisma generate`).
+    - Applying database migrations (`prisma migrate deploy`).
+    - Seeding the database with initial data (`npm run db:seed`).
 
-- Verify database connection
-- Apply database migrations
-- Seed the database with sample data for testing
+Ensure your MySQL server is running before executing this command.
 
 ### 5. Start the Server
 
@@ -76,6 +93,13 @@ Connected to the MySQL database.
 Server is running on http://localhost:3000
 ```
 
+## API Documentation
+This project uses Swagger for API documentation. Once the server is running, you can access the interactive API documentation in your browser:
+
+[http://localhost:3000/api-docs](http://localhost:3000/api-docs)
+
+This interface allows you to explore all available API endpoints, view their parameters, and test them directly.
+
 ## Sample data
 
 
@@ -87,11 +111,14 @@ When switching to a new development environment or after pulling updates, to ens
 npm install
 ```
 
-### 2. Sync database schema and seed data
+### 2. Sync Database Schema and Seed Data
+
+Ensure your database schema is up-to-date with the latest migrations and re-seed if necessary:
 
 ```bash
 npm run db:setup
 ```
+This command runs `prisma generate`, `prisma migrate deploy`, and `npm run db:seed`.
 
 ### Reseting the database
 If somehow you need to reset the database to a clean state, run
