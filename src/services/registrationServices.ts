@@ -262,16 +262,11 @@ export class RegistrationService {
         });
     }
 
-    // --- Existing getRegistrations, getRegistrationById, cancelRegistration methods ---
-    // These methods will likely need updates to correctly fetch and display data
-    // based on the new Attendee model and potentially modified Purchase structure.
     // For example, getRegistrationById should include attendees and their participants/responses.
     // cancelRegistration might need to adjust ticket quantity logic if Purchase changes.
-    // Deferring updates to these methods for now.
 
      /**
       * Retrieves a paginated list of registrations based on filters and authorization.
-      * TODO: Update includes to reflect new Attendee structure.
       */
     static async getRegistrations(query: GetRegistrationsQuery, authUser: JwtPayload) {
         const { eventId, userId, page, limit } = query;
@@ -314,10 +309,24 @@ export class RegistrationService {
             prisma.registration.findMany({
                 where, skip, take: limit, orderBy: { created_at: 'desc' },
                 include: {
-                    participant: { select: { id: true, firstName: true, lastName: true, email: true } },
-                    event: { select: { id: true, name: true, organiserId: true } },
-                    // TODO: Update purchase include
-                    purchase: { include: { /* ticket: { select: { id: true, name: true } } */ } }
+                    participant: { select: { id: true, firstName: true, lastName: true, email: true } }, // Primary participant
+                    event: { select: { id: true, name: true, organiserId: true, isFree: true } }, // Include isFree
+                    // Include attendees and their participants
+                    attendees: {
+                        include: {
+                            participant: { select: { id: true, firstName: true, lastName: true, email: true } }
+                        }
+                    },
+                    // Include purchase and its items with ticket details
+                    purchase: {
+                        include: {
+                            items: {
+                                include: {
+                                    ticket: { select: { id: true, name: true, price: true } } // Include ticket price in item
+                                }
+                            }
+                        }
+                    }
                 }
             }),
             prisma.registration.count({ where })
@@ -328,28 +337,35 @@ export class RegistrationService {
 
      /**
       * Retrieves a single registration by ID, performing authorization checks.
-      * TODO: Update includes to reflect new Attendee structure (fetch attendees -> participant, attendees -> responses).
       */
     static async getRegistrationById(registrationId: number, authUser: JwtPayload) {
         const registration = await prisma.registration.findUnique({
             where: { id: registrationId },
             include: {
-                participant: true, // Include full participant for potential userId check
-                event: { select: { id: true, name: true, organiserId: true } },
-                // TODO: Update purchase include
-                purchase: { include: { /* ticket: true */ } },
-                // TODO: Update responses include (via attendees)
-                // responses: { include: { eventQuestion: { include: { question: true } } } }
-                attendees: { // Example include
+                participant: true, // Include full primary participant for potential userId check
+                event: { select: { id: true, name: true, organiserId: true, isFree: true } }, // Include isFree
+                // Include attendees and their participants and responses
+                attendees: {
                     include: {
-                        participant: true,
-                        responses: {
+                        participant: true, // Include participant details for each attendee
+                        responses: { // Include responses for each attendee
                             include: {
-                                eventQuestion: { include: { question: true } }
+                                eventQuestion: { include: { question: true } } // Include question details for each response
                             }
                         }
                     }
-                }
+                },
+                // Include purchase and its items with ticket details, and payment details
+                purchase: {
+                    include: {
+                        items: {
+                            include: {
+                                ticket: { select: { id: true, name: true, price: true } } // Include ticket price in item
+                            }
+                        },
+                        payment: true // Include payment details if available
+                    }
+                },
             }
         });
 
@@ -358,9 +374,10 @@ export class RegistrationService {
         }
 
         // Authorization check needs update if primary participant isn't always the owner
+        // Access participant and event through the included relations
         const isOwner = registration.userId === authUser.userId ||
-                       (registration.participant?.userId !== null && registration.participant?.userId === authUser.userId);
-        const isEventOrganizer = registration.event.organiserId === authUser.userId;
+                       (registration.participant?.userId !== null && registration.participant?.userId === authUser.userId); // Access participant via relation
+        const isEventOrganizer = registration.event?.organiserId === authUser.userId; // Access event via relation
         const isAdmin = authUser.role === UserRole.ADMIN;
 
         if (!isOwner && !isEventOrganizer && !isAdmin) {
