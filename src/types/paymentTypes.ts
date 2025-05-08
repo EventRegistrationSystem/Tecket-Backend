@@ -1,28 +1,23 @@
-import { Payment, PaymentStatus } from '@prisma/client';
+import { PaymentStatus } from "@prisma/client";
 
-// Interface for data needed to create a payment intent
+// DTO for the request body when creating a payment intent
 export interface CreatePaymentIntentDto {
-  registrationId: number;
-  
-  // Add other relevant fields if needed, e.g., specific items being purchased
-  // For now, we assume the amount is derived from the registration/purchase
+    registrationId: number;
+    paymentToken?: string; // Optional token for guest payments
 }
 
-// Interface for the response when creating a payment intent
+// DTO for the response after creating a payment intent
 export interface CreatePaymentIntentResponse {
-  clientSecret: string; // The client secret from Stripe PaymentIntent
-  paymentId: number;    // The ID of the payment record in our DB
+    clientSecret: string;
+    paymentId: number; // Internal payment record ID
 }
 
-// Interface for data received from Stripe webhook events (simplified)
-// Might need more specific types based on the events 
+// DTO for handling Stripe webhook events (basic structure)
 export interface StripeWebhookEvent {
-  id: string;
-  type: string; // e.g., 'payment_intent.succeeded', 'payment_intent.payment_failed'
-  data: {
-    object: any; // The Stripe object related to the event (e.g., PaymentIntent)
-  };
+    id: string;
+    type: string;
+    data: {
+        object: any; // Can be more specific based on event type
+    };
+    // Add other relevant fields from Stripe event object 
 }
-
-// Can extend the Payment type from Prisma if needed, but often it's sufficient
-// export interface PaymentDetails extends Payment {}
