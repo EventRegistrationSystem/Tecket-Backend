@@ -8,6 +8,9 @@ export const createPaymentIntentSchema = Joi.object({
         'number.positive': 'Registration ID must be a positive number',
         'any.required': 'Registration ID is required to create a payment intent'
     }),
+    paymentToken: Joi.string().guid({ version: 'uuidv4' }).optional().messages({ // Optional UUID token
+        'string.guid': 'Payment token must be a valid UUID'
+    }),
     // Add other fields if needed later, e.g., specific items, amounts if not derived solely from registration
 });
 
