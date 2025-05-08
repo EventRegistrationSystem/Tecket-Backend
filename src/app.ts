@@ -16,7 +16,10 @@ import specs from './config/swagger';
 // Importing middlewares
 const app = express();
 
-// Apply global middlewares AFTER the raw webhook endpoint
+// Stripe webhook route needs raw body parser for signature verification
+app.use('/api/payments/webhook/stripe', express.raw({ type: 'application/json' }));
+
+// Apply global middlewares
 app.use(express.json());  // Middleware to parse JSON body for all other routes
 app.use(cookieParser());  // Middleware to parse cookies
 
@@ -33,7 +36,7 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
 app.use('/api/auth', authRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/user', userRoutes);
-app.use('/api', ticketRoutes); // Note: Consider changing base path to /api/tickets
+app.use('/api/tickets', ticketRoutes); 
 app.use('/api/registrations', registrationRoutes);
 // Mount the payment routes, including the webhook route with raw body parser and verification
 app.use('/api/payments',paymentRoutes);
