@@ -39,6 +39,7 @@ export interface CreateRegistrationDto {
 export interface CreateRegistrationResponse {
     message: string;
     registrationId: number; // The ID of the created Registration record
+    paymentToken?: string; // Optional token for guest payments
     // Optionally include other details like total price calculated, etc.
 }
 
