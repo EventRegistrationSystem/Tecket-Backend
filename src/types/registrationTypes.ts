@@ -1,4 +1,7 @@
 // Participant data structure expected within the registration payload
+
+import { PaymentStatus } from "@prisma/client";
+
 // Includes participant details and their specific answers
 export interface ParticipantInput {
     email: string;
@@ -67,7 +70,7 @@ export interface RegistrationDetailsDto {
     purchase?: { // Details if it was a paid event
         totalPrice: number; // Prisma Decimal might need conversion
         currency?: string;
-        paymentStatus?: string; // PaymentStatus enum value
+        paymentStatus?: PaymentStatus;
     };
     // Add other relevant fields as needed
 }
