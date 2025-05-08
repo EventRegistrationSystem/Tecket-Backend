@@ -4,7 +4,7 @@ import { CreateRegistrationDto, CreateRegistrationResponse, ParticipantInput } f
 import { ParticipantService } from './participantServices';
 import { AppError, ValidationError, AuthorizationError, NotFoundError } from '../utils/errors';
 import { JwtPayload } from '../types/authTypes';
-import { Decimal } from '@prisma/client/runtime/library'; 
+import { Decimal } from '@prisma/client/runtime/library';
 
 // Define type for query parameters validated by Joi (used internally)
 interface GetRegistrationsQuery {
@@ -154,8 +154,9 @@ export class RegistrationService {
             // 8. Find/Create Primary Participant
             // Assuming the first participant in the array is the primary one
             const primaryParticipantInput = participants[0];
+            // Call findOrCreateParticipant with only ParticipantDto fields
             const primaryParticipant = await ParticipantService.findOrCreateParticipant(
-                { ...primaryParticipantInput}, // Pass userId if available
+                primaryParticipantInput, // Do not pass userId here
                 tx
             );
 
@@ -170,38 +171,43 @@ export class RegistrationService {
             });
             const newRegistrationId = registration.id;
 
-            // 10. Create Purchase Record(s) (if not free)
+            // 10. Create Purchase and PurchaseItem Records (if not free)
             if (!event.isFree) {
-                // For simplicity, create one Purchase record linked to the registration,
-                // storing the total price. The quantity here might be less meaningful
-                // if multiple ticket types were bought. Consider if Purchase needs restructuring too.
-                // Current schema links Purchase 1-to-1 with Registration and 1-to-1 with Ticket,
-                // which doesn't support buying multiple *types* of tickets in one registration.
-                // --- TEMPORARY WORKAROUND: Assume only one ticket type per registration for now ---
-                if (tickets.length > 1) {
-                     throw new Error("Schema limitation: Cannot handle multiple ticket types in one registration currently.");
-                }
-                const singleTicketRequest = tickets[0];
-                const dbTicket = event.tickets.find(t => t.id === singleTicketRequest.ticketId); // Already fetched
-                if (!dbTicket) throw new Error("Consistency error: Ticket not found"); // Should not happen
+                // Create the main Purchase record linked to the registration
+                const purchase = await tx.purchase.create({
+                    data: {
+                        registrationId: newRegistrationId,
+                        totalPrice: overallTotalPrice // Store the pre-calculated total price
+                    }
+                });
+                const newPurchaseId = purchase.id;
 
-                await tx.purchase.create({
-                     data: {
-                         registrationId: newRegistrationId,
-                         ticketId: singleTicketRequest.ticketId,
-                         quantity: singleTicketRequest.quantity, // Total quantity for this ticket type
-                         unitPrice: dbTicket.price,
-                         totalPrice: overallTotalPrice // Use pre-calculated total
-                     }
-                 });
+                // Create PurchaseItem records for each ticket type in the request
+                const purchaseItemPromises = tickets.map(ticketRequest => {
+                    const dbTicket = event.tickets.find(t => t.id === ticketRequest.ticketId);
+                    if (!dbTicket) {
+                        // This should have been caught earlier, but safety check
+                        throw new Error(`Consistency error: Ticket ${ticketRequest.ticketId} not found during purchase item creation.`);
+                    }
+                    return tx.purchaseItem.create({ // Use correct model name PurchaseItem
+                        data: {
+                            purchaseId: newPurchaseId,
+                            ticketId: ticketRequest.ticketId,
+                            quantity: ticketRequest.quantity,
+                            unitPrice: dbTicket.price // Store price at time of purchase
+                        }
+                    });
+                });
+                await Promise.all(purchaseItemPromises);
 
-                 // 11. Update Ticket Quantities Sold
-                 await tx.ticket.update({
-                     where: { id: singleTicketRequest.ticketId },
-                     data: { quantitySold: { increment: singleTicketRequest.quantity } }
-                 });
-                 // --- END WORKAROUND ---
-                 // TODO: Revisit Purchase model design if multiple ticket types per registration are needed.
+                // 11. Update Ticket Quantities Sold for each ticket type
+                const ticketUpdatePromises = tickets.map(ticketRequest => {
+                    return tx.ticket.update({
+                        where: { id: ticketRequest.ticketId },
+                        data: { quantitySold: { increment: ticketRequest.quantity } }
+                    });
+                });
+                await Promise.all(ticketUpdatePromises);
             }
 
 
@@ -256,16 +262,11 @@ export class RegistrationService {
         });
     }
 
-    // --- Existing getRegistrations, getRegistrationById, cancelRegistration methods ---
-    // These methods will likely need updates to correctly fetch and display data
-    // based on the new Attendee model and potentially modified Purchase structure.
     // For example, getRegistrationById should include attendees and their participants/responses.
     // cancelRegistration might need to adjust ticket quantity logic if Purchase changes.
-    // Deferring updates to these methods for now.
 
      /**
       * Retrieves a paginated list of registrations based on filters and authorization.
-      * TODO: Update includes to reflect new Attendee structure.
       */
     static async getRegistrations(query: GetRegistrationsQuery, authUser: JwtPayload) {
         const { eventId, userId, page, limit } = query;
@@ -308,9 +309,24 @@ export class RegistrationService {
             prisma.registration.findMany({
                 where, skip, take: limit, orderBy: { created_at: 'desc' },
                 include: {
-                    participant: { select: { id: true, firstName: true, lastName: true, email: true } },
-                    event: { select: { id: true, name: true, organiserId: true } },
-                    purchase: { include: { ticket: { select: { id: true, name: true } } } }
+                    participant: { select: { id: true, firstName: true, lastName: true, email: true } }, // Primary participant
+                    event: { select: { id: true, name: true, organiserId: true, isFree: true } }, // Include isFree
+                    // Include attendees and their participants
+                    attendees: {
+                        include: {
+                            participant: { select: { id: true, firstName: true, lastName: true, email: true } }
+                        }
+                    },
+                    // Include purchase and its items with ticket details
+                    purchase: {
+                        include: {
+                            items: {
+                                include: {
+                                    ticket: { select: { id: true, name: true, price: true } } // Include ticket price in item
+                                }
+                            }
+                        }
+                    }
                 }
             }),
             prisma.registration.count({ where })
@@ -321,16 +337,35 @@ export class RegistrationService {
 
      /**
       * Retrieves a single registration by ID, performing authorization checks.
-      * TODO: Update includes to reflect new Attendee structure (fetch attendees -> participant, attendees -> responses).
       */
     static async getRegistrationById(registrationId: number, authUser: JwtPayload) {
         const registration = await prisma.registration.findUnique({
             where: { id: registrationId },
             include: {
-                participant: true, // Include full participant for potential userId check
-                event: { select: { id: true, name: true, organiserId: true } },
-                purchase: { include: { ticket: true } },
-                responses: { include: { eventQuestion: { include: { question: true } } } }
+                participant: true, // Include full primary participant for potential userId check
+                event: { select: { id: true, name: true, organiserId: true, isFree: true } }, // Include isFree
+                // Include attendees and their participants and responses
+                attendees: {
+                    include: {
+                        participant: true, // Include participant details for each attendee
+                        responses: { // Include responses for each attendee
+                            include: {
+                                eventQuestion: { include: { question: true } } // Include question details for each response
+                            }
+                        }
+                    }
+                },
+                // Include purchase and its items with ticket details, and payment details
+                purchase: {
+                    include: {
+                        items: {
+                            include: {
+                                ticket: { select: { id: true, name: true, price: true } } // Include ticket price in item
+                            }
+                        },
+                        payment: true // Include payment details if available
+                    }
+                },
             }
         });
 
@@ -338,9 +373,11 @@ export class RegistrationService {
             throw new NotFoundError('Registration not found'); // Use NotFoundError
         }
 
+        // Authorization check needs update if primary participant isn't always the owner
+        // Access participant and event through the included relations
         const isOwner = registration.userId === authUser.userId ||
-                       (registration.participant?.userId !== null && registration.participant?.userId === authUser.userId);
-        const isEventOrganizer = registration.event.organiserId === authUser.userId;
+                       (registration.participant?.userId !== null && registration.participant?.userId === authUser.userId); // Access participant via relation
+        const isEventOrganizer = registration.event?.organiserId === authUser.userId; // Access event via relation
         const isAdmin = authUser.role === UserRole.ADMIN;
 
         if (!isOwner && !isEventOrganizer && !isAdmin) {
@@ -357,22 +394,23 @@ export class RegistrationService {
      * @param requestingUser The authenticated user attempting the cancellation.
      */
     static async cancelRegistration(registrationId: number, requestingUser: JwtPayload) {
+        // Fetch registration with necessary includes for validation and updates
         const registration = await prisma.registration.findUnique({
             where: { id: registrationId },
             include: {
                 event: { select: { id: true, isFree: true } },
-                purchase: { include: { ticket: true } },
-                participant: { select: { userId: true } }, // Include participant userId for ownership check
+                // Include purchase to get its ID if it exists
+                purchase: { select: { id: true } },
+                participant: { select: { userId: true } }, // Include primary participant userId for ownership check
                 user: { select: { id: true } } // Include registration's direct userId link as well
             }
         });
 
         if (!registration) {
-            throw new NotFoundError('Registration not found'); // Use NotFoundError
+            throw new NotFoundError('Registration not found');
         }
 
         const isAdmin = requestingUser.role === UserRole.ADMIN;
-        // Check if the registration's linked user OR the participant's linked user matches
         const isOwner = registration.userId === requestingUser.userId ||
                        (registration.participant?.userId !== null && registration.participant?.userId === requestingUser.userId);
 
@@ -384,40 +422,55 @@ export class RegistrationService {
              return registration; // Already cancelled, return current state
         }
 
-        // Only allow cancellation if CONFIRMED or PENDING
         if (registration.status !== RegistrationStatus.CONFIRMED && registration.status !== RegistrationStatus.PENDING) {
              throw new ValidationError(`Cannot cancel registration with status: ${registration.status}`);
         }
 
 
         return prisma.$transaction(async (tx) => {
+            // Update the registration status first
             const updatedRegistration = await tx.registration.update({
                 where: { id: registrationId },
                 data: { status: RegistrationStatus.CANCELLED },
-                 include: { // Re-include necessary data for the response object
+                 include: { 
                     participant: true,
                     event: { select: { id: true, name: true, isFree: true } },
-                    purchase: { include: { ticket: true } },
-                    responses: { include: { eventQuestion: { include: { question: true } } } }
+                    purchase: { // Include purchase and its items
+                        include: {
+                            items: { // Include the purchase items
+                                include: {
+                                    ticket: true // Include the ticket details for each item
+                                }
+                            }
+                        }
+                    },
+                    attendees: { include: { participant: true } } // Include attendees for context
                 }
             });
 
-            // If it was a paid event and CONFIRMED/PENDING, decrement ticket quantitySold
-            if (!registration.event.isFree && registration.purchase && registration.purchase.ticket) {
-                // Check ticket exists before decrementing (safety)
-                 const ticketExists = await tx.ticket.findUnique({ where: { id: registration.purchase.ticketId } });
-                 if (ticketExists) {
-                     await tx.ticket.update({
-                         where: { id: registration.purchase.ticketId },
+            // If it was a paid event (check if purchase existed), decrement ticket quantitySold
+            if (!registration.event.isFree && registration.purchase) {
+                 // Fetch the purchase items associated with this registration's purchase
+                 const purchaseItems = await tx.purchaseItem.findMany({
+                     where: { purchaseId: registration.purchase.id } // Use the ID from the initially fetched registration
+                 });
+
+                 const ticketUpdatePromises = purchaseItems.map(item => {
+                     // Safety check: Ensure ticket exists before decrementing
+                     return tx.ticket.updateMany({ // Use updateMany for safety in case ticket was deleted
+                         where: { id: item.ticketId },
                          data: {
                              quantitySold: {
-                                 decrement: registration.purchase.quantity
+                                 decrement: item.quantity
                              }
                          }
+                     }).catch(err => {
+                         // Log if a specific ticket update fails, but don't block cancellation
+                         console.warn(`Failed to decrement quantity for Ticket ID ${item.ticketId} during cancellation for registration ${registrationId}:`, err);
                      });
-                 } else {
-                      console.warn(`Ticket ID ${registration.purchase.ticketId} not found during cancellation for registration ${registrationId}. Quantity not decremented.`);
-                 }
+                 });
+                 await Promise.all(ticketUpdatePromises);
+
                  // TODO: Implement refund logic here in a future step
             }
 

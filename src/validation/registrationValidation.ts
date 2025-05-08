@@ -19,7 +19,6 @@ const participantResponseSchema = Joi.object({
 });
 
 // Define Joi schema for the ParticipantInput structure
-// This might reuse parts of participantValidationSchema or redefine fields explicitly
 const participantInputSchema = Joi.object<ParticipantInput>({
     // Reuse participantValidationSchema fields if appropriate, or define here
     email: Joi.string().email().required().messages({
@@ -80,8 +79,21 @@ export const registrationValidationSchema = Joi.object<CreateRegistrationDto>({
         'array.min': 'At least one participant is required',
         'any.required': 'Participant details are required'
     })
-    // Custom validation could be added here to ensure participants.length matches total ticket quantity
-    // .custom((value, helpers) => { ... })
+    // Making sure no. of participants matches total ticket quantity
+    .custom((participants, helpers) => {
+        const tickets = helpers.state.ancestors[0].tickets; // Access the tickets array from the parent object
+        if (!tickets) {
+            // This case should ideally not happen if 'tickets' is required, but as a safeguard
+            return helpers.error('any.custom', { message: 'Tickets data is missing for participant count validation.' });
+        }
+        const totalTicketQuantity = tickets.reduce((sum: number, ticket: any) => sum + ticket.quantity, 0);
+        if (participants.length !== totalTicketQuantity) {
+            return helpers.error('any.custom', { message: `Number of participants (${participants.length}) must match the total quantity of tickets (${totalTicketQuantity}).` });
+        }
+        return participants; // Return the value if validation passes
+    }).messages({
+        'any.custom': 'Participant count does not match the total ticket quantity.'
+    })
 });
 
 // Validation for retrieving registrations (e.g., by event or user)
