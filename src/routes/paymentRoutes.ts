@@ -1,7 +1,7 @@
 import express from 'express';
 import * as paymentController from '../controllers/paymentController';
-import { authenticate, authorize, validateRequest } from '../middlewares/authMiddlewares'; // Import validateRequest
-import { createPaymentIntentSchema } from '../validation/paymentValidation'; // Import the schema
+import { optionalAuthenticate, validateRequest } from '../middlewares/authMiddlewares'; 
+import { createPaymentIntentSchema } from '../validation/paymentValidation';
 import { verifyStripeWebhook } from '../middlewares/stripeWebhookMiddleware';
 
 const router = express.Router();
@@ -12,7 +12,7 @@ const router = express.Router();
 router.post(
   '/create-intent',
   validateRequest(createPaymentIntentSchema), 
-  // authorize(UserRole.PARTICIPANT, UserRole.ADMIN), Add authorization if needed (e.g., check if user owns the registrationId)
+  optionalAuthenticate,
   paymentController.createPaymentIntentHandler
 );
 

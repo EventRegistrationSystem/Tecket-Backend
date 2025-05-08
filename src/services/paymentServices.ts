@@ -54,7 +54,7 @@ export const createPaymentIntent = async (data: CreatePaymentIntentDto, authUser
   let isAuthorized = false;
 
   if (authUser) {
-    // Logged-in user: Check if owner or admin
+    // Logged-in user
     const isAdmin = authUser.role === UserRole.ADMIN;
     const isOwner = registration.userId === authUser.userId;
     if (isAdmin || isOwner) {
@@ -69,10 +69,10 @@ export const createPaymentIntent = async (data: CreatePaymentIntentDto, authUser
       if (tokenMatch) {
         isAuthorized = true;
         // Optional: Invalidate the token after successful use (single-use)
-        // await prisma.purchase.update({
-        //   where: { id: registration.purchase.id },
-        //   data: { paymentToken: null, paymentTokenExpiry: null },
-        // });
+        await prisma.purchase.update({
+          where: { id: registration.purchase.id },
+          data: { paymentToken: null, paymentTokenExpiry: null },
+        });
       }
     }
   }
