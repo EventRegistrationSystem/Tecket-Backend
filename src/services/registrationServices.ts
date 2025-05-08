@@ -5,6 +5,8 @@ import { ParticipantService } from './participantServices';
 import { AppError, ValidationError, AuthorizationError, NotFoundError } from '../utils/errors';
 import { JwtPayload } from '../types/authTypes';
 import { Decimal } from '@prisma/client/runtime/library';
+import crypto from 'crypto'; // For generating token
+import bcrypt from 'bcrypt'; // For hashing token
 
 // Define type for query parameters validated by Joi (used internally)
 interface GetRegistrationsQuery {
@@ -132,16 +134,17 @@ export class RegistrationService {
 
 
         // --- Database Transaction ---
-        return prisma.$transaction(async (tx) => {
-
-            // 7. Lock and Re-validate Ticket Quantities (if not free)
+         return prisma.$transaction(async (tx) => {
+             let generatedPlaintextToken: string | undefined = undefined; 
+ 
+             // 7. Lock and Re-validate Ticket Quantities (if not free)
             if (!event.isFree) {
                 const ticketIds = Object.keys(ticketQuantities).map(Number);
                 const currentTickets = await tx.ticket.findMany({
                     where: { id: { in: ticketIds } },
-                    // Use pessimistic locking if DB supports it and high concurrency is expected
-                    // For MySQL: await tx.$queryRaw`SELECT * FROM tickets WHERE id IN (${Prisma.join(ticketIds)}) FOR UPDATE`;
                 });
+                // Use pessimistic locking if DB supports it and high concurrency is expected
+                // For MySQL: await tx.$queryRaw`SELECT * FROM tickets WHERE id IN (${Prisma.join(ticketIds)}) FOR UPDATE`;
 
                 for (const currentTicket of currentTickets) {
                     const requestedQuantity = ticketQuantities[currentTicket.id];
@@ -152,11 +155,11 @@ export class RegistrationService {
             }
 
             // 8. Find/Create Primary Participant
-            // Assuming the first participant in the array is the primary one
+
+            // The first participant in the array is the primary one
             const primaryParticipantInput = participants[0];
-            // Call findOrCreateParticipant with only ParticipantDto fields
             const primaryParticipant = await ParticipantService.findOrCreateParticipant(
-                primaryParticipantInput, // Do not pass userId here
+                primaryParticipantInput,
                 tx
             );
 
@@ -177,7 +180,7 @@ export class RegistrationService {
                 const purchase = await tx.purchase.create({
                     data: {
                         registrationId: newRegistrationId,
-                        totalPrice: overallTotalPrice // Store the pre-calculated total price
+                        totalPrice: overallTotalPrice
                     }
                 });
                 const newPurchaseId = purchase.id;
@@ -207,8 +210,29 @@ export class RegistrationService {
                         data: { quantitySold: { increment: ticketRequest.quantity } }
                     });
                 });
-                await Promise.all(ticketUpdatePromises);
-            }
+                 await Promise.all(ticketUpdatePromises);
+ 
+                  // --- Guest Payment Token Generation ---
+                  // generatedPlaintextToken is already declared above
+                  if (!userId) { // Only generate for guests
+                      const plaintextToken = crypto.randomUUID();
+                      const saltRounds = 10; // Or use value from config
+                     const hashedToken = await bcrypt.hash(plaintextToken, saltRounds);
+                     const expiryMinutes = 60; // Token valid for 1 hour
+                     const expiryDate = new Date(Date.now() + expiryMinutes * 60 * 1000);
+
+                     // Update the purchase record with the hashed token and expiry
+                     await tx.purchase.update({
+                         where: { id: newPurchaseId },
+                         data: {
+                             paymentToken: hashedToken,
+                             paymentTokenExpiry: expiryDate,
+                         },
+                     });
+                     generatedPlaintextToken = plaintextToken; // Store plaintext to return
+                 }
+                 // --- End Guest Payment Token Generation ---
+             }
 
 
             // 12. Create Attendee and Response Records for ALL participants
@@ -237,7 +261,7 @@ export class RegistrationService {
                 const responsePromises = participantInput.responses.map(response => {
                     const eventQuestion = eventQuestionMap.get(response.eventQuestionId);
                     if (!eventQuestion) {
-                         // This validation was done earlier, but double-check
+                        // This should have been caught in earlier validation, but safety check
                          throw new Error(`Consistency error: EventQuestion mapping not found for eventQuestionId: ${response.eventQuestionId}`);
                     }
                     return tx.response.create({
@@ -254,15 +278,17 @@ export class RegistrationService {
             await Promise.all(attendeePromises);
 
 
-            // 13. Return success response
-            return {
-                message: event.isFree ? "Registration confirmed" : "Registration pending payment",
-                registrationId: newRegistrationId
-            };
-        });
+             // 13. Return success response (include payment token if generated)
+             const response: CreateRegistrationResponse = {
+                 message: event.isFree ? "Registration confirmed" : "Registration pending payment",
+                 registrationId: newRegistrationId
+             };
+             if (generatedPlaintextToken) {
+                 response.paymentToken = generatedPlaintextToken;
+             }
+             return response;
+         });
     }
-
-    // For example, getRegistrationById should include attendees and their participants/responses.
     // cancelRegistration might need to adjust ticket quantity logic if Purchase changes.
 
      /**
@@ -389,7 +415,6 @@ export class RegistrationService {
 
      /**
      * Cancels a registration by ID, performing authorization checks.
-     * TODO: Review logic related to Purchase/Ticket quantity if Purchase model changes.
      * @param registrationId The ID of the registration to cancel.
      * @param requestingUser The authenticated user attempting the cancellation.
      */
