@@ -432,7 +432,7 @@ export class RegistrationService {
             const updatedRegistration = await tx.registration.update({
                 where: { id: registrationId },
                 data: { status: RegistrationStatus.CANCELLED },
-                 include: { // Include data needed for the response object
+                 include: { 
                     participant: true,
                     event: { select: { id: true, name: true, isFree: true } },
                     purchase: { // Include purchase and its items

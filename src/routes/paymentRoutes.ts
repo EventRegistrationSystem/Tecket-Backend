@@ -1,6 +1,7 @@
 import express from 'express';
 import * as paymentController from '../controllers/paymentController';
-import { authenticate, authorize } from '../middlewares/authMiddlewares'; // Corrected middleware names
+import { authenticate, authorize, validateRequest } from '../middlewares/authMiddlewares'; // Import validateRequest
+import { createPaymentIntentSchema } from '../validation/paymentValidation'; // Import the schema
 import { UserRole } from '@prisma/client';
 
 const router = express.Router();
@@ -10,9 +11,10 @@ const router = express.Router();
 // Requires authentication (e.g., logged-in participant)
 router.post(
   '/create-intent',
-  authenticate, 
+  authenticate,
+  validateRequest(createPaymentIntentSchema), // Add validation middleware
   // Add authorization if needed (e.g., check if user owns the registrationId)
-  // authorize(UserRole.PARTICIPANT, UserRole.ADMIN), 
+  // authorize(UserRole.PARTICIPANT, UserRole.ADMIN),
   paymentController.createPaymentIntentHandler
 );
 
