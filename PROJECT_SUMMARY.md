@@ -1,6 +1,6 @@
 # Project Summary: Event Registration System Backend
 
-**Last Updated:** 07/05/2025
+**Last Updated:** 08/05/2025
 
 ## 1. Project Purpose and Core Functionalities
 
@@ -15,10 +15,16 @@ To provide a robust backend API for managing events, registrations, tickets, and
     *   Supports both registered users and guest participants, linking participants to events.
     *   Handles conditional status (`PENDING` for paid, `CONFIRMED` for free).
     *   **Refactored to support multiple participants (attendees) and multiple ticket types per registration.** This involved adding the `Attendee` and `PurchaseItem` models, updating the `Purchase` and `Ticket` models, and refactoring the `createRegistration` service method to handle arrays of participants and tickets, create `Attendee` and `PurchaseItem` records, and link responses correctly.
-    *   Retrieval with authorization implemented.
+    *   Retrieval (`GET /registrations`, `GET /registrations/:id`) implemented with authorization and updated includes for `Attendee` and `PurchaseItem` data.
     *   **Cancellation implemented** (`PATCH /registrations/:registrationId`) allowing owner/admin to cancel, including decrementing ticket count for paid events based on `PurchaseItem` quantities.
-*   **Questionnaire Management:** Custom questions per event, response collection from participants during registration.
-*   **Payment Processing:** **(In Progress - Stripe Backend Setup)** Secure handling of payments for paid event tickets using Stripe. Backend setup for creating Payment Intents and handling basic webhooks is complete.
+    *   **Validation re-enabled** for `POST /registrations` using Joi, including custom validation for matching participant count to ticket quantity.
+*   **Questionnaire Management:** Custom questions per event, response collection from participants during registration, now linked via the `Attendee` model.
+*   **Payment Processing:** **(In Progress - Stripe Backend Setup)**
+    *   Secure handling of payments for paid event tickets using Stripe.
+    *   Backend setup for creating Stripe Payment Intents (`POST /api/payments/create-intent`) is complete, including validation and authorization (supports both logged-in users via JWT and guests via temporary payment tokens).
+    *   **Guest Payment Token System:** Implemented temporary, hashed, expiring tokens stored in the `Purchase` table to authorize guest payment intent creation. Tokens are generated and returned during guest registration for paid events.
+    *   **Webhook Handling:** Basic webhook handler (`POST /api/payments/webhook/stripe`) implemented to process `payment_intent.succeeded` and `payment_intent.payment_failed` events, updating `Payment` and `Registration` status accordingly.
+    *   **Webhook Signature Verification:** Middleware implemented and applied to verify webhook requests originate from Stripe.
 *   **Reporting & Analytics:** (Planned) Data collection to support future reporting for organizers/admins.
 
 ## 2. Technology Stack
@@ -52,7 +58,7 @@ Layered Architecture:
 *   `Registration`: Links `Participant` to `Event`, stores `status`.
 *   `Attendee`: Links `Registration` and `Participant`, representing an individual attending under a registration. Has many `Response` records.
 *   `Response`: Participant answers to `EventQuestions`, linked to an `Attendee`.
-*   `Purchase`: Records ticket purchases for paid events, linked to a `Registration`. Has many `PurchaseItem` records.
+*   `Purchase`: Records ticket purchases for paid events, linked to a `Registration`. Has many `PurchaseItem` records. Includes optional `paymentToken` (hashed) and `paymentTokenExpiry` for guest checkout.
 *   `PurchaseItem`: Records details for each type of ticket bought within a `Purchase`, linked to `Purchase` and `Ticket`.
 *   `Payment`: Records payment details, linked to a `Purchase`. Includes `stripePaymentIntentId` and `currency` for Stripe integration.
 
@@ -65,7 +71,7 @@ Standard structure for a Node.js/Express/TypeScript project:
 │   ├── config/         # App configuration (DB, Swagger)
 │   ├── controllers/    # Request handlers
 │   ├── services/       # Business logic
-│   ├── middlewares/    # Express middleware (auth, validation)
+│   ├── middlewares/    # Express middleware (auth, validation, stripe)
 │   ├── routes/         # API route definitions
 │   ├── types/          # TypeScript type definitions
 │   ├── utils/          # Utility functions (e.g., error handling)
@@ -81,7 +87,7 @@ Standard structure for a Node.js/Express/TypeScript project:
 ```
 *(Updated `summaries/` to `docs/`)*
 
-## 4. Implemented Features (as of Sprint 3, Week 3)
+## 4. Implemented Features (as of Sprint 4, Week 1)
 
 *   **Authentication:** User registration, login, JWT generation/validation, refresh tokens, role-based access control middleware (`src/middlewares/authMiddlewares.ts`).
 *   **User Profile:** Fetching, updating user profiles, and password updates implemented and unit tested (`src/controllers/userController.ts`, `src/services/userServices.ts`, `src/__tests__/unit/userService.test.ts`).
@@ -89,74 +95,76 @@ Standard structure for a Node.js/Express/TypeScript project:
 *   **Ticket Management:** CRUD for ticket types associated with events, pricing, availability checks, sales periods, validation against sold quantities, ownership authorization checks. Routes refactored for consistency (`/events/:eventId/tickets/:ticketId`). Ownership authorization added to service layer (`src/controllers/ticketController.ts`, `src/services/ticketServices.ts`). Good unit test coverage (`src/__tests__/unit/ticketService.test.ts`).
 *   **Registration System:**
     *   Creation implemented for guests/users.
-    *   **Refactored to support multiple participants (attendees) and multiple ticket types per registration.** This involved significant schema changes (`Attendee`, `PurchaseItem` models) and updates to the `createRegistration` service method.
+    *   **Refactored to support multiple participants (attendees) and multiple ticket types per registration.** Includes `Attendee` and `PurchaseItem` models.
     *   Handles conditional status (`PENDING` for paid, `CONFIRMED` for free).
-    *   Retrieval with authorization implemented.
-    *   **Cancellation implemented** (`PATCH /registrations/:registrationId`) allowing owner/admin to cancel, including decrementing ticket count for paid events based on `PurchaseItem` quantities.
-    *   Unit tested (`src/controllers/registrationController.ts`, `src/services/registrationServices.ts`, `src/__tests__/unit/registrationService.test.ts`).
-*   **Questionnaire Management:** Custom questions per event, response collection from participants during registration, now linked via the `Attendee` model.
-*   **Payment Processing:** **(In Progress - Stripe Backend Setup)**
-    *   Added Stripe dependencies.
-    *   Configured environment variables for Stripe keys.
-    *   Updated `Payment` model in Prisma schema and migrated database.
-    *   Created payment types, service (`src/services/paymentServices.ts`), controller (`src/controllers/paymentController.ts`), and routes (`src/routes/paymentRoutes.ts`).
-    *   Implemented core backend logic for creating Stripe Payment Intents (`createPaymentIntent`) and handling basic webhook events (`handleWebhookEvent` for success/failure).
-    *   Integrated payment routes into `app.ts`.
-*   **Database:** Schema defined (`prisma/schema.prisma`), migrations applied (`prisma/migrations/`), seeding script (`prisma/seed.ts`). Includes migrations for Attendee and PurchaseItem refactors.
+    *   Retrieval (`GET /registrations`, `GET /registrations/:id`) implemented with authorization and updated includes.
+    *   **Cancellation implemented** (`PATCH /registrations/:registrationId`) allowing owner/admin to cancel, including decrementing ticket count based on `PurchaseItem` quantities.
+    *   **Validation re-enabled** for `POST /registrations` using Joi, including custom validation.
+*   **Questionnaire Management:** Custom questions per event, response collection from participants during registration, linked via `Attendee`.
+*   **Payment Processing:** **(Backend Setup Complete)**
+    *   Added Stripe dependencies and configured environment variables.
+    *   Updated `Payment` and `Purchase` models in Prisma schema and migrated database.
+    *   Created payment types, service, controller, and routes.
+    *   Implemented logic for creating Stripe Payment Intents (`createPaymentIntent`) with validation and authorization (supports JWT for users, temporary tokens for guests).
+    *   Implemented **Guest Payment Token System** (generation, hashing, storage, expiry, validation).
+    *   Implemented basic webhook handler (`handleWebhookEvent`) for success/failure events.
+    *   Implemented **Webhook Signature Verification** middleware.
+    *   Configured `express.raw()` middleware for webhook route in `app.ts`.
+*   **Database:** Schema defined (`prisma/schema.prisma`), migrations applied (`prisma/migrations/`), seeding script (`prisma/seed.ts`). Includes migrations for Attendee, PurchaseItem, and Guest Payment Token refactors.
 *   **Basic Setup:** Project structure, dependencies, TypeScript config, Jest setup (`src/__tests__/setup.ts`) including test DB cleanup logic.
-*   **API Documentation:** Basic Swagger setup (`src/config/swagger.ts`) exists, needs population/refinement. Route comments updated for tickets.
+*   **API Documentation:** Basic Swagger setup (`src/config/swagger.ts`) exists, needs population/refinement.
 *   **Custom Errors:** Added `AuthorizationError` and `NotFoundError` to `src/utils/errors.ts`.
 
 ## 5. Known Issues, Limitations & Technical Debt
 
-*   **Registration Features:** Full registration *updates* not implemented. Cancellation logic does not yet include *refund processing* for paid events. `getRegistrations` and `getRegistrationById` service methods need updating to correctly fetch and structure data based on the new `Attendee` and `PurchaseItem` relationships (e.g., updating `include` statements).
-*   **Validation Gaps:** Registration validation schema still needs review against service logic edge cases and re-enabled in the controller. Other minor validation gaps might exist.
+*   **Registration Features:** Full registration *updates* not implemented. Cancellation logic does not yet include *refund processing* for paid events.
+*   **Unit Testing:** Unit tests for `RegistrationService` need updating to reflect multi-participant/multi-ticket refactoring. Unit tests for `PaymentService` need to be created.
 *   **Admin Features:** Admin user management endpoints are defined in routes but not implemented (deferred).
 *   **Integration Testing:** No integration tests currently exist.
-*   **Error Handling:** Could be standardized further across all services/controllers.
+*   **Error Handling:** Could be standardized further across all services/controllers. Webhook error handling could be more robust (e.g., retry mechanisms, alerting).
 *   **Logging:** Minimal logging implemented.
 *   **Image Uploads:** No functionality for handling image uploads.
 *   **Notifications:** No email or other notification system implemented.
 *   **Participant Service:** Minimal implementation (`findOrCreateParticipant` only). Lacks dedicated get/update methods.
-*   **Payment Module:** Requires thorough testing (unit and integration), input validation, authorization checks, and frontend integration.
+*   **Payment Module:** Requires thorough testing (manual API, unit, integration), and frontend integration. Webhook handler needs refinement for more event types if necessary. Currency is currently hardcoded ('aud'). Guest payment token invalidation after use is not yet implemented.
 
 ## 6. Immediate Next Steps & Future Development Plan
 
-**Current Focus (End of Sprint 3 / Start of Sprint 4):**
-*   **Update Registration Get Methods:** Refactor `getRegistrations` and `getRegistrationById` service methods to correctly include `Attendee` and `PurchaseItem` data. (High Priority)
-*   **Re-enable and Refine Registration Validation:** Re-enable the Joi validation in the controller and add any necessary custom validation logic (e.g., ensuring participant count matches total ticket quantity). (High Priority)
-*   **Complete Payment Processing Backend:** Implement input validation and authorization checks for payment endpoints. (High Priority)
+**Current Focus (Sprint 4):**
+*   **Test Payment Flow:** Manually test payment intent creation (guest and user) and webhook handling using Stripe CLI. (High Priority)
+*   **Implement Refund Logic:** Add refund processing (via Stripe API) to the `cancelRegistration` method. (High Priority)
+*   **Frontend Integration:** Work with frontend to integrate Stripe Elements and the payment backend endpoints. (Very High Priority)
 
 **Future Development Plan (Prioritized based on existing Frontend):**
-1.  **Integrate Payment Frontend:** Work with frontend to integrate Stripe Elements and the payment backend endpoints. (Very High Priority)
-2.  **Implement Refund Logic:** Add refund processing to the `cancelRegistration` method. (High Priority)
-3.  **Admin User Management:** Implement deferred admin endpoints for user management needed by admin dashboard. (High Priority)
-4.  **Email Notifications:** Implement email sending for key user flows (registration, cancellation, password reset). (High Priority)
-5.  **Integration Testing:** Add API-level tests for key user flows. (Medium Priority - Ongoing)
-6.  **Deployment:** Plan and begin setup on Render (Web Service, DB, Env Vars, Migrations). (Medium Priority - Ongoing)
-7.  **Reporting System (Basic):** Implement basic organizer reports if required by admin dashboard, otherwise potentially defer. (Low/Medium Priority)
-8.  **Refine API & Support Frontend:** Address any specific data needs or endpoint adjustments identified during frontend refinement. (Ongoing)
-9.  **Advanced Features:** Advanced reporting, image uploads, etc. (Lower Priority)
+1.  **Admin User Management:** Implement deferred admin endpoints for user management needed by admin dashboard. (High Priority)
+2.  **Email Notifications:** Implement email sending for key user flows (registration, cancellation, password reset). (High Priority)
+3.  **Unit Testing:** Update/add unit tests for Registration and Payment services. (Medium Priority)
+4.  **Integration Testing:** Add API-level tests for key user flows (registration, payment). (Medium Priority - Ongoing)
+5.  **Deployment:** Plan and begin setup on Render (Web Service, DB, Env Vars, Migrations). (Medium Priority - Ongoing)
+6.  **Reporting System (Basic):** Implement basic organizer reports if required by admin dashboard, otherwise potentially defer. (Low/Medium Priority)
+7.  **Refine API & Support Frontend:** Address any specific data needs or endpoint adjustments identified during frontend refinement. (Ongoing)
+8.  **Advanced Features:** Advanced reporting, image uploads, etc. (Lower Priority)
 
 ## 7. Critical Design Decisions & Tradeoffs
 
 *   **Participant Model:** Using a single `Participant` model linked optionally to `User` supports guest registration.
 *   **Explicit `isFree` Flag:** Added `isFree` boolean to `Event` model for clarity.
-*   **Conditional Registration Status:** Using `PENDING` for paid events until payment is implemented.
-*   **Transaction-Based Operations:** Using Prisma transactions for multi-entity operations (event creation, registration, event update, registration cancellation).
+*   **Conditional Registration Status:** Using `PENDING` for paid events until payment is confirmed via webhook.
+*   **Transaction-Based Operations:** Using Prisma transactions for multi-entity operations (event creation, registration, event update, registration cancellation, webhook processing).
 *   **Multi-Level Validation:** Validation at route middleware (Joi), service layer (business rules), and database constraints.
-*   **JWT Authentication:** Using JWT with refresh tokens stored in HTTP-only cookies.
-*   **Ownership Authorization:** Implemented primarily in the service layer by passing `userId` and checking against resource owner IDs (e.g., `event.organiserId`).
-*   **Attendee Model:** Explicitly linking Registration and Participant via `Attendee` provides a clear way to manage individual attendees and their responses within a multi-participant registration.
+*   **JWT Authentication:** Using JWT with refresh tokens stored in HTTP-only cookies for logged-in users.
+*   **Ownership Authorization:** Implemented primarily in the service layer by passing `userId` and checking against resource owner IDs.
+*   **Attendee Model:** Explicitly linking Registration and Participant via `Attendee` provides a clear way to manage individual attendees and their responses.
 *   **PurchaseItem Model:** Decoupling ticket details from the main `Purchase` via `PurchaseItem` allows a single purchase to include multiple ticket types.
+*   **Guest Payment Authorization:** Using temporary, hashed, expiring tokens stored in the `Purchase` record to authorize payment intent creation for guests.
 
 ## 8. Environment Setup
 
 **Development Setup:**
 1.  Clone the repository.
 2.  Run `npm install` to install dependencies.
-3.  Configure environment variables in a `.env` file (copy from `.env.example`). Key variables include database connection string and JWT secrets.
-4.  Run `npm run db:setup` (or equivalent like `npx prisma migrate dev --name init && npx prisma db seed`) to apply database migrations and seed initial data. Ensure all migrations are applied, including those for Attendee and PurchaseItem.
+3.  Configure environment variables in a `.env` file (copy from `.env.example`). Key variables include database connection string, JWT secrets, `STRIPE_SECRET_KEY`, and `STRIPE_WEBHOOK_SECRET`.
+4.  Run `npm run db:setup` (or equivalent like `npx prisma migrate dev --name init && npx prisma db seed`) to apply database migrations and seed initial data. Ensure all migrations are applied.
 5.  Start the development server using `npm run dev`.
 
 **Test Accounts (Created during seeding):**
