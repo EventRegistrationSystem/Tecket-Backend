@@ -263,6 +263,10 @@ model Purchase {
   payment      Payment?
   items        PurchaseItem[] // Added relation to PurchaseItem
 
+  // Fields for guest payment authorization
+  paymentToken       String?   @unique @map("payment_token") // Store HASHED token
+  paymentTokenExpiry DateTime? @map("payment_token_expiry")
+
   @@map("purchases")
 }
 
