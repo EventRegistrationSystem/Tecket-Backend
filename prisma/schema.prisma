@@ -140,7 +140,6 @@ model EventQuestions {
 
 model Response {
   id             Int    @id @default(autoincrement()) @map("id")
-  // registrationId Int    @map("registration_id") // Removed field
   attendeeId     Int    @map("attendee_id") // Add link to Attendee
   eqId           Int    @map("eq_id")
   responseText   String @map("response_text") @db.Text
@@ -149,8 +148,7 @@ model Response {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
-  // registration  Registration   @relation(fields: [registrationId], references: [id]) // Removed relation
-  attendee      Attendee       @relation(fields: [attendeeId], references: [id]) // Added relation to Attendee
+  attendee      Attendee       @relation(fields: [attendeeId], references: [id]) 
   eventQuestion EventQuestions @relation(fields: [eqId], references: [id])
 
   @@map("responses")
@@ -240,7 +238,6 @@ model Ticket {
 
   // Relations
   event     Event      @relation(fields: [eventId], references: [id])
-  // purchases Purchase[] // Removed direct relation to Purchase
   purchaseItems PurchaseItem[] // Added relation to PurchaseItem
 
   @@map("tickets")
@@ -249,22 +246,18 @@ model Ticket {
 model Purchase {
   id             Int     @id @default(autoincrement()) @map("id")
   registrationId Int     @unique @map("registration_id")
-  // ticketId       Int     @unique @map("ticket_id") // Removed
-  // quantity       Int // Removed
-  // unitPrice      Decimal @map("unit_price") @db.Decimal(10, 2) // Removed
-  totalPrice     Decimal @map("total_price") @db.Decimal(10, 2) // Keep total for the overall purchase
+  totalPrice     Decimal @map("total_price") @db.Decimal(10, 2) 
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt() @map("updated_at")
 
   // Relations
   registration Registration @relation(fields: [registrationId], references: [id])
-  // ticket       Ticket       @relation(fields: [ticketId], references: [id]) // Removed relation
   payment      Payment?
   items        PurchaseItem[] // Added relation to PurchaseItem
 
   // Fields for guest payment authorization
-  paymentToken       String?   @unique @map("payment_token") // Store HASHED token
+  paymentToken       String?   @unique @map("payment_token") 
   paymentTokenExpiry DateTime? @map("payment_token_expiry")
 
   @@map("purchases")

@@ -1,8 +1,11 @@
 import Stripe from 'stripe';
 import { PrismaClient, Prisma, PaymentMethod, PaymentStatus, RegistrationStatus } from '@prisma/client';
 import { prisma } from '../config/prisma';
-import { AppError } from '../utils/errors';
+import { AppError, AuthorizationError } from '../utils/errors'; 
 import { CreatePaymentIntentDto, CreatePaymentIntentResponse, StripeWebhookEvent } from '../types/paymentTypes';
+import { JwtPayload } from '../types/authTypes'; 
+import { UserRole } from '@prisma/client'; 
+import bcrypt from 'bcrypt'; 
 
 // Initialize Stripe with the secret key from environment variables
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
@@ -10,26 +13,34 @@ if (!stripeSecretKey) {
   throw new AppError(400, 'Stripe secret key not found in environment variables.');
 }
 const stripe = new Stripe(stripeSecretKey, {
-  apiVersion: '2025-03-31.basil', // Use the latest API version
+  apiVersion: '2025-03-31.basil', // Latest API version
   typescript: true,
 });
 
 /**
- * Creates a Stripe Payment Intent for a given registration.
- * @param data - Data containing the registration ID.
+ * Creates a Stripe Payment Intent for a given registration, ensuring authorization via JWT or payment token.
+ * @param data - Data containing the registration ID and optional payment token.
+ * @param authUser - The authenticated user making the request (can be null for guests).
  * @returns The client secret for the Payment Intent and the internal payment ID.
  */
-export const createPaymentIntent = async (data: CreatePaymentIntentDto): Promise<CreatePaymentIntentResponse> => {
-  const { registrationId } = data;
+export const createPaymentIntent = async (data: CreatePaymentIntentDto, authUser: JwtPayload | null): Promise<CreatePaymentIntentResponse> => {
+  const { registrationId, paymentToken } = data;
 
-  // 1. Fetch Registration and related Purchase/Ticket details
+  // 1. Fetch Registration and related Purchase details for authorization and payment calculation
   const registration = await prisma.registration.findUnique({
     where: { id: registrationId },
     include: {
-      event: true,
-      purchase: {
+      event: true, // Needed for isFree check
+      purchase: { // Needed for amount calculation and payment record linking
         include: {
-          ticket: true,
+          // ticket: true, // No longer needed directly from purchase
+          items: { // Include items to potentially verify amount later if needed
+            include: {
+              ticket: true
+            }
+          },
+          // Include payment token and expiry for guest authorization
+          registration: { select: { userId: true } } // Include registration to get userId
         },
       },
     },
@@ -38,11 +49,46 @@ export const createPaymentIntent = async (data: CreatePaymentIntentDto): Promise
   if (!registration) {
     throw new AppError(404, 'Registration not found');
   }
+
+  // --- Authorization Check ---
+  let isAuthorized = false;
+
+  if (authUser) {
+    // Logged-in user: Check if owner or admin
+    const isAdmin = authUser.role === UserRole.ADMIN;
+    const isOwner = registration.userId === authUser.userId;
+    if (isAdmin || isOwner) {
+      isAuthorized = true;
+    }
+  } else if (paymentToken && registration.purchase?.paymentToken && registration.purchase?.paymentTokenExpiry) {
+    // Guest user with token: Verify token and expiry
+    const now = new Date();
+    if (registration.purchase.paymentTokenExpiry > now) {
+      // Compare provided plaintext token with the stored hash
+      const tokenMatch = await bcrypt.compare(paymentToken, registration.purchase.paymentToken);
+      if (tokenMatch) {
+        isAuthorized = true;
+        // Optional: Invalidate the token after successful use (single-use)
+        // await prisma.purchase.update({
+        //   where: { id: registration.purchase.id },
+        //   data: { paymentToken: null, paymentTokenExpiry: null },
+        // });
+      }
+    }
+  }
+
+  if (!isAuthorized) {
+    throw new AuthorizationError('Forbidden: You are not authorized to create a payment intent for this registration.');
+  }
+  // --- End Authorization Check ---
+
+
   if (registration.event.isFree) {
     throw new AppError(400, 'Cannot create payment intent for a free event registration');
   }
-  if (!registration.purchase || !registration.purchase.ticket) {
-    throw new AppError(404, 'Purchase or ticket details missing for this registration');
+  // Check if purchase exists (it should for a paid event registration)
+  if (!registration.purchase) {
+    throw new AppError(404, 'Purchase details missing for this registration');
   }
   if (registration.status !== RegistrationStatus.PENDING) {
     // Or potentially allow retrying failed payments? Depends on requirements.
@@ -50,9 +96,9 @@ export const createPaymentIntent = async (data: CreatePaymentIntentDto): Promise
   }
 
   // 2. Calculate amount (Stripe expects amount in the smallest currency unit, e.g., cents)
-  // Prisma Decimal needs conversion. Ensure totalPrice is correctly calculated and stored.
+  // Use the totalPrice stored on the Purchase record
   const amountInCents = Math.round(Number(registration.purchase.totalPrice) * 100);
-  const currency = 'aud'; // TODO: Make currency dynamic if needed (e.g., based on event or user location)
+  const currency = 'aud'; 
 
   // 3. Check if a payment record already exists for this purchase
   let payment = await prisma.payment.findUnique({
@@ -92,7 +138,7 @@ export const createPaymentIntent = async (data: CreatePaymentIntentDto): Promise
           purchaseId: registration.purchase.id.toString(),
           eventId: registration.eventId.toString(),
         },
-        // Consider adding payment_method_types if needed, e.g., ['card']
+        // Consider adding payment_method_types, e.g., ['card']
         // automatic_payment_methods: { enabled: true }, 
       });
 
@@ -100,10 +146,10 @@ export const createPaymentIntent = async (data: CreatePaymentIntentDto): Promise
       const paymentData = {
         purchaseId: registration.purchase.id,
         stripePaymentIntentId: paymentIntent.id,
-        amount: registration.purchase.totalPrice, // Store original decimal amount
+        amount: registration.purchase.totalPrice, 
         currency: currency,
         status: PaymentStatus.PENDING, // Initial status
-        paymentMethod: PaymentMethod.CREDIT_CARD, // Use Enum
+        paymentMethod: PaymentMethod.CREDIT_CARD, 
       };
 
       if (payment) {
