@@ -8,8 +8,8 @@ const router = express.Router();
 
 // POST /api/payments/create-intent
 // Creates a Stripe Payment Intent for a registration
-// Authorization handled in service via JWT or payment token
-router.post(
+// This route is used for both authenticated and guest users
+router.post(  
   '/create-intent',
   validateRequest(createPaymentIntentSchema), 
   optionalAuthenticate,
