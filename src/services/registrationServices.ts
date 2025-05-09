@@ -290,7 +290,6 @@ export class RegistrationService {
              return response;
          });
     }
-    // cancelRegistration might need to adjust ticket quantity logic if Purchase changes.
 
      /**
       * Retrieves a paginated list of registrations based on filters and authorization.

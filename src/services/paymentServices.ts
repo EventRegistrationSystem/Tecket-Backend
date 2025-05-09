@@ -33,7 +33,6 @@ export const createPaymentIntent = async (data: CreatePaymentIntentDto, authUser
       event: true, // Needed for isFree check
       purchase: { // Needed for amount calculation and payment record linking
         include: {
-          // ticket: true, // No longer needed directly from purchase
           items: { // Include items to potentially verify amount later if needed
             include: {
               ticket: true
@@ -60,8 +59,10 @@ export const createPaymentIntent = async (data: CreatePaymentIntentDto, authUser
     if (isAdmin || isOwner) {
       isAuthorized = true;
     }
-  } else if (paymentToken && registration.purchase?.paymentToken && registration.purchase?.paymentTokenExpiry) {
-    // Guest user with token: Verify token and expiry
+  } 
+  // Guest user with token: Verify token and expiry
+  else if (paymentToken && registration.purchase?.paymentToken && registration.purchase?.paymentTokenExpiry) {
+    
     const now = new Date();
     if (registration.purchase.paymentTokenExpiry > now) {
       // Compare provided plaintext token with the stored hash
