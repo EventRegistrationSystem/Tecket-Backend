@@ -50,9 +50,9 @@ export const verifyStripeWebhook: RequestHandler = async (req: Request, res: Res
 
 
   try {
-    // Use the raw body (req.rawBody) which is available if express.raw() is used
+    // Use req.body, which express.raw() populates with a Buffer
     const event = stripe.webhooks.constructEvent(
-      (req as any).rawBody, // Access the raw body
+      req.body, 
       signature,
       webhookSecret
     );
