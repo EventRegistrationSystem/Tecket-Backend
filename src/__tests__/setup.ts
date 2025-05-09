@@ -1,3 +1,5 @@
+console.log('--- JEST SETUP FILE src/__tests__/setup.ts IS BEING EXECUTED ---');
+
 import { prisma } from '../config/prisma';
 import dotenv from 'dotenv';
 
@@ -13,8 +15,10 @@ beforeAll(async () => {
 afterAll(async () => {
     // Clean up database in an order that respects foreign key constraints
     await prisma.payment.deleteMany();       // Depends on Purchase
-    await prisma.purchase.deleteMany();      // Depends on Registration, Ticket
-    await prisma.response.deleteMany();      // Depends on Registration, EventQuestions
+    await prisma.purchaseItem.deleteMany();  // Depends on Purchase, Ticket (Delete before Purchase)
+    await prisma.purchase.deleteMany();      // Depends on Registration
+    await prisma.response.deleteMany();      // Depends on Attendee, EventQuestions
+    await prisma.attendee.deleteMany();      // Depends on Registration, Participant (Delete before Registration & Participant if direct link)
     await prisma.eventQuestions.deleteMany(); // Depends on Event, Question
     await prisma.ticket.deleteMany();        // Depends on Event
     await prisma.registration.deleteMany();  // Depends on Event, Participant, User
