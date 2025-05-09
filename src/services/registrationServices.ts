@@ -19,11 +19,12 @@ interface GetRegistrationsQuery {
 export class RegistrationService {
     /**
      * Creates a registration for an event, handling multiple participants and tickets.
-     * @param data - The registration data including event, tickets, and participant details with responses.
+     * @param dto - The registration data (eventId, tickets, participants).
+     * @param userId - Optional ID of the authenticated user.
      * @returns The ID of the created registration.
      */
-    static async createRegistration(data: CreateRegistrationDto): Promise<CreateRegistrationResponse> {
-        const { eventId, userId, tickets, participants } = data;
+    static async createRegistration(dto: CreateRegistrationDto, userId?: number): Promise<CreateRegistrationResponse> {
+        const { eventId, tickets, participants } = dto;
 
         // --- Pre-transaction Validations ---
 

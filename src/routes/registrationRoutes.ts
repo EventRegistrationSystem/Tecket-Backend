@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { RegistrationController } from '../controllers/registrationController';
-import { authenticate } from '../middlewares/authMiddlewares'; // Corrected import name
-import { validateRequest } from '../middlewares/authMiddlewares'; // Import validate middleware
+import { authenticate, optionalAuthenticate, validateRequest } from '../middlewares/authMiddlewares'; 
 import { registrationValidationSchema } from '../validation/registrationValidation'; 
 
 const router = Router();
@@ -130,7 +129,7 @@ const router = Router();
  */
 router.post(
     '/',
-    // authenticate, // Uncomment if registration requires authentication
+    optionalAuthenticate, // Optional authentication for guest registrations
     validateRequest(registrationValidationSchema),
     RegistrationController.createRegistration
 );
