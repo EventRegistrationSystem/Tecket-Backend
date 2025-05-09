@@ -28,50 +28,73 @@ export class RegistrationService {
 
         // --- Pre-transaction Validations ---
 
-        // 1. Validate Input Structure
-        if (!eventId || !tickets || tickets.length === 0 || !participants || participants.length === 0) {
-            throw new ValidationError('Event ID, tickets, and participant details are required.');
+        // 1. Basic Input Presence
+        if (!eventId || !participants || participants.length === 0) {
+            throw new ValidationError('Event ID and participant details are required.');
         }
-        const totalTicketQuantity = tickets.reduce((sum, t) => sum + t.quantity, 0);
-        if (totalTicketQuantity !== participants.length) {
-            throw new ValidationError('Number of participants must match the total quantity of tickets.');
-        }
-
-        // 2. Fetch Event and related data needed for validation
+        
+        // 2. Fetch Event first to check if it's free, as this affects ticket validation
         const event = await prisma.event.findUnique({
             where: { id: eventId },
             include: {
-                tickets: { where: { id: { in: tickets.map(t => t.ticketId) } } }, // Fetch only relevant tickets
-                eventQuestions: { include: { question: true } } // Fetch questions for response validation
+                // Conditionally include tickets if tickets array is provided and not empty
+                tickets: (tickets && tickets.length > 0) ? { where: { id: { in: tickets.map(t => t.ticketId) } } } : undefined,
+                eventQuestions: { include: { question: true } }
             }
         });
 
-        // 3. Validate Event
+        // 3. Validate Event Existence and Status
         if (!event) { throw new NotFoundError('Event not found'); }
         if (event.status !== 'PUBLISHED') {
             throw new ValidationError('Event is not currently open for registration.');
         }
 
-        // 4. Validate Capacity (Consider total requested tickets)
+        // 4. Validate Tickets array based on event type (free/paid)
+        if (!event.isFree) {
+            if (!tickets || tickets.length === 0) {
+                throw new ValidationError('Tickets are required for paid events.');
+            }
+        } else { // Event is free
+            if (tickets && tickets.length > 0 && tickets.some(t => t.ticketId)) { // Allow tickets: [] for free, but not tickets with actual IDs
+                 throw new ValidationError('Cannot select specific tickets for a free event. The tickets array should be empty.');
+            }
+        }
+        
+        // 5. Validate Participant Count against Ticket Quantity (only if tickets are relevant)
+        let totalTicketQuantity = 0;
+        if (!event.isFree && tickets && tickets.length > 0) {
+            totalTicketQuantity = tickets.reduce((sum, t) => sum + t.quantity, 0);
+            if (totalTicketQuantity !== participants.length) {
+                throw new ValidationError('Number of participants must match the total quantity of tickets for paid events.');
+            }
+        } else if (event.isFree) {
+            // For free events, often 1 participant implies 1 "spot" unless explicitly handled otherwise.
+            // If multiple participants are allowed for free events without distinct tickets,
+            // totalTicketQuantity might be considered participants.length or a fixed value per registration.
+            // For now, let's assume totalTicketQuantity for capacity check is participants.length for free events.
+            totalTicketQuantity = participants.length;
+        }
+
+
+        // 6. Validate Capacity
         const currentRegistrationsCount = await prisma.registration.count({
             where: {
                 eventId: eventId,
                 status: { in: [RegistrationStatus.CONFIRMED, RegistrationStatus.PENDING] }
             }
         });
-        // Estimate new attendees based on total quantity, might need refinement if registrations can have varying attendee counts
         if (currentRegistrationsCount + totalTicketQuantity > event.capacity) {
             throw new ValidationError(`Event capacity (${event.capacity}) exceeded. Only ${event.capacity - currentRegistrationsCount} spots remaining.`);
         }
 
-        // 5. Validate Tickets (if not free) and Calculate Total Price
+        // 7. Validate Ticket Details (if paid event and tickets provided) and Calculate Total Price
         let overallTotalPrice = new Decimal(0);
-        const ticketQuantities: { [key: number]: number } = {}; // Track requested quantity per ticketId
+        const ticketQuantities: { [key: number]: number } = {}; 
 
-        if (!event.isFree) {
+        if (!event.isFree && tickets && tickets.length > 0) {
             const now = new Date();
             for (const requestedTicket of tickets) {
-                const dbTicket = event.tickets.find(t => t.id === requestedTicket.ticketId);
+                const dbTicket = event.tickets?.find(t => t.id === requestedTicket.ticketId); // event.tickets might be undefined if not included
                 if (!dbTicket) {
                     throw new NotFoundError(`Ticket with ID ${requestedTicket.ticketId} not found for this event.`);
                 }

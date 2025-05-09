@@ -110,7 +110,9 @@ describe('RegistrationService', () => {
             expect(result.message).toBe('Registration pending payment');
             expect(result.registrationId).toBe(mockRegistration.id);
             expect(result.paymentToken).toBeUndefined();
-            expect(prisma.registration.create).toHaveBeenCalledWith(expect.objectContaining({ userId: mockUserId, status: RegistrationStatus.PENDING }));
+            expect(prisma.registration.create).toHaveBeenCalledWith({
+                data: expect.objectContaining({ userId: mockUserId, status: RegistrationStatus.PENDING })
+            });
             expect(prisma.purchase.create).toHaveBeenCalled();
             expect(bcrypt.hash).not.toHaveBeenCalled();
         });
@@ -122,7 +124,8 @@ describe('RegistrationService', () => {
                 participants: [{ ...baseParticipantInput, email: 'guest@example.com' }],
             };
             const mockGuestParticipant = { ...mockParticipant, id: 2, email: 'guest@example.com' };
-            const mockGuestRegistration = { ...mockRegistration, id: 2, participantId: mockGuestParticipant.id, userId: null };
+            // For guest, userId in registration record should be null (or undefined if Prisma handles it that way)
+            const mockGuestRegistration = { ...mockRegistration, id: 2, participantId: mockGuestParticipant.id, userId: null }; 
             const mockGuestPurchase = { ...mockPurchase, id: 2, registrationId: mockGuestRegistration.id };
             const mockGuestAttendee = { ...mockAttendee, id: 2, registrationId: mockGuestRegistration.id, participantId: mockGuestParticipant.id };
             const mockUuid = 'test-uuid-123';
@@ -143,15 +146,17 @@ describe('RegistrationService', () => {
             (prisma.attendee.create as jest.Mock).mockResolvedValue(mockGuestAttendee);
             (prisma.response.create as jest.Mock).mockResolvedValue({});
 
-
             const result = await RegistrationService.createRegistration(dto, undefined); // No userId for guest
 
             expect(result.message).toBe('Registration pending payment');
             expect(result.registrationId).toBe(mockGuestRegistration.id);
             expect(result.paymentToken).toBe(mockUuid);
-            expect(prisma.registration.create).toHaveBeenCalledWith(expect.objectContaining({ userId: null, status: RegistrationStatus.PENDING }));
+            expect(prisma.registration.create).toHaveBeenCalledWith({
+                data: expect.objectContaining({ userId: undefined, status: RegistrationStatus.PENDING }) // Service passes undefined for userId
+            });
             expect(bcrypt.hash).toHaveBeenCalledWith(mockUuid, 10);
             expect(prisma.purchase.update).toHaveBeenCalledWith(expect.objectContaining({
+                where: { id: mockGuestPurchase.id }, // Make sure to assert the where clause if important
                 data: { paymentToken: mockHashedToken, paymentTokenExpiry: expect.any(Date) }
             }));
         });
@@ -163,11 +168,16 @@ describe('RegistrationService', () => {
                 participants: [baseParticipantInput, { ...baseParticipantInput, email: 'p2@e.com' }], // 2 participants
             };
             await expect(RegistrationService.createRegistration(dto, mockUserId))
-                .rejects.toThrow(new ValidationError('Number of participants must match the total quantity of tickets.'));
+                .rejects.toThrow(new ValidationError('Number of participants must match the total quantity of tickets for paid events.')); 
         });
 
         it('should throw NotFoundError if event not found', async () => {
-            const dto: CreateRegistrationDto = { eventId: 999, tickets: [], participants: [] };
+            // Provide valid tickets and participants to pass initial validation
+            const dto: CreateRegistrationDto = { 
+                eventId: 999, // Non-existent event
+                tickets: [{ ticketId: mockTicketId1, quantity: 1 }], 
+                participants: [baseParticipantInput] 
+            };
             (prisma.event.findUnique as jest.Mock).mockResolvedValue(null);
             await expect(RegistrationService.createRegistration(dto, mockUserId))
                 .rejects.toThrow(new NotFoundError('Event not found'));
@@ -243,7 +253,12 @@ describe('RegistrationService', () => {
             const result = await RegistrationService.createRegistration(dto, mockUserId);
         
             expect(result.message).toBe('Registration confirmed');
-            expect(prisma.registration.create).toHaveBeenCalledWith(expect.objectContaining({ status: RegistrationStatus.CONFIRMED }));
+            expect(prisma.registration.create).toHaveBeenCalledWith({
+                data: expect.objectContaining({ 
+                    status: RegistrationStatus.CONFIRMED,
+                    userId: mockUserId // Ensure userId is also checked if passed for free event
+                })
+            });
             expect(prisma.purchase.create).not.toHaveBeenCalled(); // No purchase for free event
         });
 
