@@ -24,8 +24,6 @@ export interface ParticipantInput {
 // Main DTO for creating a registration with multiple participants/attendees
 export interface CreateRegistrationDto {
     eventId: number;
-    userId?: number; // Optional: ID of the logged-in user initiating the registration
-    // isGuest?: boolean; // Can likely be inferred from presence/absence of userId
     tickets: Array<{
         ticketId: number; // ID of the ticket type being purchased
         quantity: number; // How many of this ticket type

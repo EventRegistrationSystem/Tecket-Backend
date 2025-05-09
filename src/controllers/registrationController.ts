@@ -25,20 +25,25 @@ export class RegistrationController {
             // const registrationData: CreateRegistrationDto = value;
 
             // Directly use req.body for now, assuming it matches CreateRegistrationDto
-            const registrationData: CreateRegistrationDto = req.body;
+            const registrationDataFromRequest: CreateRegistrationDto = req.body;
+            let finalUserId: number | undefined = undefined;
 
             // Add userId from authenticated user if available
-            if (req.user) {
-                 registrationData.userId = req.user.userId;
-            } else {
-                 // Handle guest registration - ensure userId is not required if guest
-                 // Maybe add an isGuest flag or infer from lack of req.user?
-                 // The service logic currently assumes userId is optional.
+            if (req.user && req.user.userId) {
+                 finalUserId = req.user.userId;
             }
+            // If req.user is not present, finalUserId remains undefined (guest)
+            // Any userId potentially in registrationDataFromRequest for a guest is ignored.
 
+            // Prepare the DTO for the service. userId is no longer part of CreateRegistrationDto.
+            const serviceDto: CreateRegistrationDto = {
+                eventId: registrationDataFromRequest.eventId,
+                tickets: registrationDataFromRequest.tickets,
+                participants: registrationDataFromRequest.participants,
+            };
 
-            // 2. Call the updated service method
-            const result: CreateRegistrationResponse = await RegistrationService.createRegistration(registrationData);
+            // 2. Call the updated service method, passing finalUserId as a separate argument
+            const result: CreateRegistrationResponse = await RegistrationService.createRegistration(serviceDto, finalUserId);
 
             // 3. Send response (contains message and registrationId)
             res.status(201).json(result);

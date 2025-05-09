@@ -53,7 +53,6 @@ export const registrationValidationSchema = Joi.object<CreateRegistrationDto>({
         'number.positive': 'Event ID must be a positive number',
         'any.required': 'Event ID is required'
     }),
-    userId: Joi.number().integer().positive().optional(), // Optional user ID
     tickets: Joi.array().items(
         Joi.object({
             ticketId: Joi.number().integer().positive().required().messages({
