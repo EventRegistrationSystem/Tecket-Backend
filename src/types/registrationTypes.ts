@@ -8,7 +8,7 @@ export interface ParticipantInput {
     firstName: string;
     lastName: string;
     phoneNumber?: string;
-    dateOfBirth?: Date | string; // Allow string for input, convert in service if needed
+    dateOfBirth?: Date | string; // Allow string for input, convert in service layer
     address?: string;
     city?: string;
     state?: string;
