@@ -1,0 +1,555 @@
+# Backend API Integration Guide for Frontend Developers
+
+**Last Updated:** 10/05/2025
+
+## 1. Introduction & Overview
+
+**Purpose:** This guide is intended to assist frontend developers in integrating with the Event Registration System's backend API. It provides explanations of core workflows, endpoint usage, data structures, and important considerations, complementing the detailed API specifications available via SwaggerUI.
+
+**Application Overview:** The backend supports an event registration platform where organizers can create and manage events (free and paid), and participants (both registered users and guests) can discover events, register for them, answer event-specific questions, and handle payments for paid events via Stripe.
+
+**API Base URL (Local Development):** `http://localhost:3000/api` 
+*(Note: Replace `3000` if your local server runs on a different port. Staging/Production URLs to be added when available.)*
+
+**SwaggerUI Documentation:** [Link to your SwaggerUI - e.g., `http://localhost:3000/api-docs`] *(Please update this link)*
+
+## 2. Getting Started & General Concepts
+
+### 2.1. Authentication
+
+The backend uses JWT (JSON Web Tokens) for authenticating registered users.
+
+*   **Login Endpoint:** `POST /api/auth/login`
+    *   **Purpose:** Authenticate an existing user.
+    *   **Request Body:**
+        ```json
+        {
+          "email": "user@example.com", // string, required, valid email
+          "password": "yourpassword"   // string, required
+        }
+        ```
+    *   **Success Response (200 OK):**
+        ```json
+        {
+          "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...", // string, JWT Access Token
+          "user": { // UserSummary object
+            "id": 1,
+            "email": "user@example.com",
+            "firstName": "John",
+            "lastName": "Doe",
+            "role": "PARTICIPANT" // Enum: PARTICIPANT, ORGANIZER, ADMIN
+          }
+        }
+        ```
+        A refresh token is also set as an HTTP-only cookie by the backend to handle token refreshes transparently.
+    *   **Frontend Action:** Store the `accessToken` securely (e.g., in memory, localStorage/sessionStorage with appropriate security considerations). Store the `user` object for displaying user information and managing UI based on role. For subsequent requests to protected endpoints, include the `accessToken` in the `Authorization` header: `Authorization: Bearer <accessToken>`.
+
+*   **User Registration (Account Creation):** `POST /api/auth/register`
+    *   **Purpose:** Create a new user account.
+    *   **Request Body:**
+        ```json
+        {
+          "email": "newuser@example.com",    // string, required, unique, valid email
+          "password": "password123",       // string, required, (min length/complexity rules may apply)
+          "firstName": "New",              // string, required
+          "lastName": "User"               // string, required
+        }
+        ```
+    *   **Success Response (201 Created):** User object (excluding password).
+        ```json
+        {
+          "id": 2,
+          "email": "newuser@example.com",
+          "firstName": "New",
+          "lastName": "User",
+          "role": "PARTICIPANT",
+          "createdAt": "YYYY-MM-DDTHH:mm:ss.sssZ",
+          "updatedAt": "YYYY-MM-DDTHH:mm:ss.sssZ"
+        }
+        ```
+
+*   **Optional Authentication on Certain Routes:**
+    *   Routes like `POST /api/registrations` and `POST /api/payments/create-intent` use `optionalAuthenticate` middleware.
+    *   If an `Authorization: Bearer <token>` header is provided and the token is valid, `req.user` is populated on the backend, and the action is treated as an authenticated user's action (e.g., `userId` is automatically associated).
+    *   If no token is provided, the request is treated as a guest action.
+
+### 2.2. Error Handling
+
+*   **Common HTTP Status Codes & Scenarios:**
+    *   `200 OK`: Standard success for GET, PUT, PATCH.
+    *   `201 Created`: Resource successfully created (typically for POST).
+    *   `204 No Content`: Successful request with no response body (e.g., for some DELETE operations).
+    *   `400 Bad Request`: Client-side error. Often due to validation failures (missing fields, invalid formats). The response body will usually contain a `message` and potentially a `details` array with specific validation errors.
+        *   *Example:* `{ "message": "Validation failed: eventId is required", "details": [{ "field": "eventId", "message": "eventId is required" }] }`
+    *   `401 Unauthorized`: Authentication token is missing, invalid, or expired. User needs to log in or refresh their session.
+    *   `403 Forbidden`: User is authenticated but does not have the necessary permissions/role for the requested action or resource.
+    *   `404 Not Found`: The requested resource (e.g., an event with a specific ID) does not exist.
+    *   `409 Conflict`: The request could not be completed due to a conflict with the current state of the resource (e.g., trying to cancel an already cancelled registration, unique constraint violation).
+    *   `500 Internal Server Error`: An unexpected error occurred on the server.
+*   **Frontend Action:** Handle these status codes appropriately. Display user-friendly messages based on the error. For 401/403, consider redirecting to login or showing permission errors.
+
+### 2.3. Pagination (for GET list endpoints)
+
+*   **Query Parameters:** `page` (default: 1), `limit` (default: 10).
+*   **Response Structure:**
+    ```json
+    {
+      "message": "Items retrieved successfully",
+      "data": [ /* array of resource items */ ],
+      "pagination": {
+        "totalCount": 120, // Total number of items matching the query
+        "totalPages": 12,  // totalCount / limit
+        "currentPage": 1,  // Current page number
+        "limit": 10        // Items per page
+      }
+    }
+    ```
+*   **Frontend Action:** Use pagination controls to allow users to navigate through list results.
+
+### 2.4. Date Formatting
+All dates/timestamps returned by the API are in ISO 8601 format (e.g., `2025-05-10T13:30:00.000Z`). Ensure consistent parsing and display on the frontend.
+
+## 3. Core Modules & Endpoints
+
+### 3.1. Event Management (Focus: Viewing Events)
+
+This section details how users can fetch and view event information.
+
+*   **List All Published Events:** `GET /api/events`
+    *   **Purpose:** Retrieves a paginated list of events that are `PUBLISHED` and thus visible to the general public.
+    *   **Authentication:** Optional. Results are the same for guests and logged-in users (unless future personalization is added).
+    *   **Query Parameters for Filtering & Pagination:**
+        *   `search=<string>`: Filters events by name or description containing the search term.
+        *   `eventType=<MUSICAL|SPORTS|SOCIAL|VOLUNTEERING>`: Filters by event type.
+        *   `isFree=<true|false>`: Filters by free or paid events.
+        *   `location=<string>`: Filters by location (partial match).
+        *   `startDate=<YYYY-MM-DD>`: Events starting on or after this date.
+        *   `endDate=<YYYY-MM-DD>`: Events ending on or before this date.
+        *   `page=<number>`: Page number for pagination.
+        *   `limit=<number>`: Number of events per page.
+    *   **Success Response (200 OK):**
+        ```json
+        {
+          "message": "Events retrieved successfully",
+          "data": [
+            {
+              "id": 1,
+              "name": "Annual Music Festival",
+              "description": "A great music festival...",
+              "location": "Melbourne Showgrounds",
+              "capacity": 5000,
+              "eventType": "MUSICAL",
+              "isFree": false,
+              "startDateTime": "2025-07-20T10:00:00.000Z",
+              "endDateTime": "2025-07-22T23:00:00.000Z",
+              "status": "PUBLISHED",
+              "organiser": { "id": 10, "firstName": "John", "lastName": "Smith" }, // Summary
+              "_count": { "registrations": 123 } // Number of current registrations
+              // ... other summary fields as defined in Swagger/DTO
+            }
+            // ... more events
+          ],
+          "pagination": { /* ... pagination object ... */ }
+        }
+        ```
+    *   **Frontend Action:** Display events in a list or card view. Implement filtering UI based on available query parameters. Handle pagination.
+
+*   **Get Single Event Details:** `GET /api/events/:eventId`
+    *   **Purpose:** Retrieves comprehensive details for a specific event, including available tickets and registration questions.
+    *   **Authentication:** Optional.
+    *   **Path Parameter:** `:eventId` (number) - The ID of the event.
+    *   **Success Response (200 OK):**
+        ```json
+        {
+          "id": 1,
+          "name": "Annual Music Festival",
+          "description": "A great music festival with multiple stages...",
+          "location": "Melbourne Showgrounds",
+          "capacity": 5000,
+          "eventType": "MUSICAL",
+          "isFree": false,
+          "startDateTime": "2025-07-20T10:00:00.000Z",
+          "endDateTime": "2025-07-22T23:00:00.000Z",
+          "status": "PUBLISHED",
+          "organiser": { "id": 10, "firstName": "John", "lastName": "Smith", "email": "john.smith@example.com" },
+          "tickets": [ // Array of available ticket types for this event
+            {
+              "id": 101,
+              "name": "General Admission",
+              "price": "50.00", // String representation of Decimal
+              "quantityTotal": 1000,
+              "quantitySold": 123,
+              "salesStart": "2025-06-01T00:00:00.000Z",
+              "salesEnd": "2025-07-19T23:59:59.000Z",
+              "status": "ACTIVE"
+            },
+            {
+              "id": 102,
+              "name": "VIP Pass",
+              "price": "150.00",
+              "quantityTotal": 200,
+              "quantitySold": 30,
+              // ...
+            }
+          ],
+          "eventQuestions": [ // Array of questions for this event's registration form
+            {
+              "id": 1, // This is the EventQuestion ID (eqId)
+              "questionId": 201, // Actual Question ID
+              "isRequired": true,
+              "displayOrder": 1,
+              "question": { // The actual question details
+                "id": 201,
+                "questionText": "What is your T-shirt size?",
+                "questionType": "MULTIPLE_CHOICE", // Enum: TEXT, MULTIPLE_CHOICE, etc.
+                "category": "Apparel",
+                "validationRules": { "options": ["S", "M", "L", "XL"] } // Example
+              }
+            },
+            {
+              "id": 2,
+              "questionId": 202,
+              "isRequired": false,
+              "displayOrder": 2,
+              "question": {
+                "id": 202,
+                "questionText": "Any dietary restrictions?",
+                "questionType": "TEXT"
+              }
+            }
+          ],
+          "_count": { "registrations": 123 }
+        }
+        ```
+    *   **Frontend Action:** Display detailed event information. If the user proceeds to register, use the `tickets` array to show ticket options and the `eventQuestions` array to dynamically build the registration questionnaire. The `eventQuestions[n].id` is the `eventQuestionId` needed when submitting responses.
+
+### 3.2. Registration Workflow
+
+This flow allows users (guests or logged-in) to register for an event.
+
+*   **Step 1: User Selects Event & Tickets, Provides Participant Info (Frontend UI)**
+    *   Frontend has the `eventId`.
+    *   User selects tickets: `Array<{ ticketId: number, quantity: number }>`. For free events, this array should be empty.
+    *   User provides details for each participant (total number of participants must match total ticket quantity for paid events). Each participant object is a `ParticipantInput`:
+        ```json
+        // ParticipantInput Structure
+        {
+          "email": "string",         // required, valid email
+          "firstName": "string",     // required
+          "lastName": "string",      // required
+          "phoneNumber": "string?",  // optional
+          "dateOfBirth": "string?",  // optional, ISO Date string e.g., "1990-01-15" or "1990-01-15T00:00:00.000Z"
+          "address": "string?",      // optional
+          "city": "string?",         // optional
+          "state": "string?",        // optional
+          "zipCode": "string?",      // optional
+          "country": "string?",      // optional
+          "responses": [             // required array, even if empty
+            {
+              "eventQuestionId": "number", // ID of the EventQuestion (from GET /api/events/:eventId)
+              "responseText": "string"   // User's answer
+            }
+            // ... more responses for this participant
+          ]
+        }
+        ```
+
+*   **Step 2: Backend Call - Create Registration (`POST /api/registrations`)**
+    *   **Endpoint:** `POST /api/registrations`
+    *   **Headers:**
+        *   `Content-Type: application/json`
+        *   For **logged-in user registrations**: `Authorization: Bearer <JWT_ACCESS_TOKEN>` (Backend derives `userId`).
+        *   For **guest registrations**: No `Authorization` header.
+    *   **Request Body (`CreateRegistrationDto`):**
+        ```json
+        // Example for a paid event, logged-in user registering self + one guest
+        {
+          "eventId": 1, 
+          "tickets": [
+            { "ticketId": 101, "quantity": 1 }, // Ticket for self
+            { "ticketId": 102, "quantity": 1 }  // Ticket for guest
+          ],
+          "participants": [
+            { 
+              "email": "loggedinuser@example.com", "firstName": "LoggedUser", "lastName": "Name", 
+              "responses": [{ "eventQuestionId": 1, "responseText": "M" }] 
+            },
+            { 
+              "email": "guestfriend@example.com", "firstName": "Guest", "lastName": "Friend", 
+              "responses": [{ "eventQuestionId": 1, "responseText": "L" }] 
+            }
+          ]
+        }
+        ```
+        *Refer to `docs/test_payloads/registration_payloads.md` for more examples.*
+    *   **Success Response (201 Created - `CreateRegistrationResponse`):**
+        ```json
+        {
+          "message": "Registration pending payment", // or "Registration confirmed" for free events
+          "registrationId": 123,
+          "paymentToken": "d76491ea-30d8-41ec-8cf9-d610ea41cab0" // ONLY for guest registration for a PAID event
+        }
+        ```
+    *   **Frontend Action:**
+        *   If `message` is "Registration confirmed" (free event), registration is complete. Navigate to a success page or update UI.
+        *   If `message` is "Registration pending payment", store `registrationId`. If `paymentToken` is present (guest flow), store it securely (e.g., in-memory for the current session, or session storage if appropriate care is taken) for the next step. Proceed to Payment Intent Creation. Handle potential errors (400, 404) by displaying messages to the user.
+
+### 3.3. Payment Workflow (for Paid Events)
+
+This follows a `PENDING` registration for a paid event.
+
+*   **Step 1: Backend Call - Create Payment Intent (`POST /api/payments/create-intent`)**
+    *   **Purpose:** To obtain a `clientSecret` from Stripe, which is needed to initialize Stripe Elements on the frontend for payment.
+    *   **Endpoint:** `POST /api/payments/create-intent`
+    *   **Headers:**
+        *   `Content-Type: application/json`
+        *   For **logged-in user's payment**: `Authorization: Bearer <JWT_ACCESS_TOKEN>`
+        *   For **guest's payment**: No `Authorization` header (relies on `paymentToken` in body).
+    *   **Request Body (`CreatePaymentIntentDto`):**
+        ```json
+        // For logged-in user
+        {
+          "registrationId": 123 // From previous registration step
+        }
+        ```
+        ```json
+        // For guest user
+        {
+          "registrationId": 124, // From previous registration step
+          "paymentToken": "d76491ea-30d8-41ec-8cf9-d610ea41cab0" // From previous registration step
+        }
+        ```
+    *   **Success Response (200 OK or 201 Created):**
+        ```json
+        {
+          "clientSecret": "pi_XYZ_secret_ABC", // Stripe Payment Intent Client Secret
+          "paymentId": 567                   // Your internal backend Payment record ID
+        }
+        ```
+    *   **Frontend Action:** Receive and store the `clientSecret`. This secret is sensitive and should be handled carefully. It will be used to initialize Stripe Elements for payment collection. Handle errors (400, 401, 403, 404) appropriately. For example, if a guest's `paymentToken` is expired (403), the user might need to restart the registration.
+
+*   **Step 2: Frontend Payment Processing with Stripe.js/Elements**
+    *   **Initialization:** Use your Stripe Publishable Key and the `clientSecret` to initialize Stripe Elements (e.g., the Card Element).
+        ```javascript
+        // Example JS on frontend
+        // const stripe = Stripe('YOUR_STRIPE_PUBLISHABLE_KEY');
+        // const elements = stripe.elements({ clientSecret });
+        // const cardElement = elements.create('card');
+        // cardElement.mount('#card-element-div');
+        ```
+    *   **Payment Submission:** When the user submits their payment details:
+        ```javascript
+        // Example JS on frontend
+        // const { error, paymentIntent } = await stripe.confirmCardPayment(
+        //   clientSecret, // From your backend
+        //   {
+        //     payment_method: {
+        //       card: cardElement,
+        //       billing_details: { name: 'Cardholder Name' },
+        //     },
+        //   }
+        // );
+        ```
+    *   **Handle Stripe.js Response:**
+        *   If `error` (e.g., `error.type === 'card_error'` or `error.type === 'validation_error'`): Display `error.message` to the user. They may need to correct their card details or try a different card.
+        *   If `paymentIntent.status === 'succeeded'`: The payment was processed successfully by Stripe. The frontend can now show a tentative success message or redirect to an order confirmation/thank you page.
+        *   If `paymentIntent.status === 'requires_action'` or `'requires_confirmation'`: Additional steps like 3D Secure might be needed. Stripe.js often handles these automatically if configured.
+    *   **Frontend Dev Note:** While `paymentIntent.status === 'succeeded'` from `confirmCardPayment` is a strong indicator, the final confirmation of order fulfillment should rely on backend status updates driven by webhooks.
+
+*   **Step 3: Backend Webhook Handling (Information for Frontend Context)**
+    *   **Purpose:** Stripe sends asynchronous notifications (webhooks) to your backend (`POST /api/payments/webhook/stripe`) about payment events. This is how your backend reliably updates the order/registration status.
+    *   **Events Handled by Backend:** `payment_intent.succeeded`, `payment_intent.payment_failed`.
+    *   **Backend Actions:**
+        *   On `payment_intent.succeeded`: `Registration.status` -> `CONFIRMED`, `Payment.status` -> `COMPLETED`.
+        *   On `payment_intent.payment_failed`: `Payment.status` -> `FAILED`.
+    *   **How Frontend Gets Final Confirmed Status (Post-Stripe.js interaction):**
+        1.  **Polling:** After `stripe.confirmCardPayment` indicates success (or a pending state), the frontend can poll a backend endpoint (e.g., `GET /api/registrations/:registrationId`) periodically to check if `Registration.status` has changed to `CONFIRMED`.
+        2.  **Redirect with Server-Side Check:** Redirect to a success/order page. This page, when loaded, makes a backend call to get the definitive registration/payment status.
+        3.  **WebSockets (Advanced):** If implemented, the backend could push a real-time status update to the connected frontend client. (Specify if not implemented).
+        *Frontend Dev Note: Do not consider the registration fully complete and fulfilled based *only* on the Stripe.js `confirmCardPayment` success. Always ensure the user is directed to a state where the backend-confirmed status is eventually checked and displayed.*
+
+### 3.4. Event Management (Organizer Perspective)
+
+This section details endpoints primarily used by users with the `ORGANIZER` role to create and manage their events. All endpoints here require authentication and appropriate authorization (typically ownership of the event or `ADMIN` role).
+
+*   **List Organizer's Events:** `GET /api/events/my-events`
+    *   **Purpose:** Retrieves a paginated list of events created by the currently authenticated organizer.
+    *   **Authentication:** Required (`ORGANIZER` or `ADMIN` role).
+    *   **Query Parameters for Filtering & Pagination:**
+        *   `status=<DRAFT|PUBLISHED|CANCELLED|COMPLETED>`: Filter by event status.
+        *   `search=<string>`: Filter by name/description.
+        *   `page=<number>`, `limit=<number>` for pagination.
+    *   **Success Response (200 OK):** Paginated list of event objects (full detail or summary as per backend implementation).
+        *   *Frontend Dev Note: Check Swagger for the exact response structure.*
+    *   **Frontend Action:** Display a dashboard or list for organizers to see and manage their events.
+
+*   **Create New Event:** `POST /api/events`
+    *   **Purpose:** Allows an authenticated `ORGANIZER` to create a new event.
+    *   **Authentication:** Required (`ORGANIZER` role).
+    *   **Request Body (`CreateEventDto` - refer to Swagger/types for full structure):**
+        ```json
+        {
+          "name": "My Awesome Conference",
+          "description": "A conference about awesome things.",
+          "location": "Virtual or Physical Location",
+          "capacity": 200,
+          "eventType": "CONFERENCE", // Or other valid EventType enum
+          "isFree": false,
+          "startDateTime": "2025-10-01T09:00:00.000Z",
+          "endDateTime": "2025-10-02T17:00:00.000Z",
+          "tickets": [ // Required if isFree is false
+            {
+              "name": "Early Bird",
+              "price": "75.00",
+              "quantityTotal": 50,
+              "salesStart": "2025-06-01T00:00:00.000Z",
+              "salesEnd": "2025-07-31T23:59:59.000Z"
+            },
+            {
+              "name": "Standard",
+              "price": "100.00",
+              "quantityTotal": 150,
+              "salesStart": "2025-08-01T00:00:00.000Z",
+              "salesEnd": "2025-09-30T23:59:59.000Z"
+            }
+          ],
+          "questions": [ // Optional array of questions for the event
+            {
+              "questionText": "What is your company size?",
+              "questionType": "MULTIPLE_CHOICE", // Default is TEXT
+              "isRequired": false,
+              "displayOrder": 1,
+              "validationRules": { "options": ["1-10", "11-50", "51-200", "200+"] }
+            },
+            {
+              "questionText": "Any special requests?",
+              "isRequired": false,
+              "displayOrder": 2
+            }
+          ]
+        }
+        ```
+    *   **Success Response (201 Created):** The newly created event object, including generated IDs for the event, tickets, and questions.
+    *   **Frontend Action:** Typically redirect to the event's management page or update the organizer's list of events.
+
+*   **Update Existing Event:** `PUT /api/events/:eventId`
+    *   **Purpose:** Allows the event organizer (or admin) to update details of an existing event.
+    *   **Authentication:** Required (Event Owner or `ADMIN` role).
+    *   **Path Parameter:** `:eventId` (number).
+    *   **Request Body (`UpdateEventDto` - partial updates allowed, send only fields to change):**
+        ```json
+        {
+          "description": "An updated description for this awesome conference.",
+          "capacity": 250
+          // Can also include updates to tickets and questions arrays.
+          // Handling updates to tickets/questions might involve sending the full desired state
+          // or specific instructions for add/update/delete (backend logic dependent).
+        }
+        ```
+        *Frontend Dev Note: Clarify with backend/Swagger how updates to nested arrays like `tickets` and `questions` are handled (e.g., full replacement vs. partial patch).*
+    *   **Success Response (200 OK):** The updated event object.
+    *   **Frontend Action:** Refresh event details display.
+
+*   **Delete Event:** `DELETE /api/events/:eventId`
+    *   **Purpose:** Allows the event organizer (or admin) to delete an event.
+    *   **Authentication:** Required (Event Owner or `ADMIN` role).
+    *   **Path Parameter:** `:eventId` (number).
+    *   **Success Response (204 No Content or 200 OK with message):**
+    *   **Frontend Action:** Remove event from lists, confirm deletion.
+    *   **Note:** Deletion might be restricted if the event has existing registrations (backend should enforce this).
+
+*   **Update Event Status:** `PATCH /api/events/:eventId/status`
+    *   **Purpose:** Allows the organizer/admin to change the event's status (e.g., from `DRAFT` to `PUBLISHED`, or to `CANCELLED`).
+    *   **Authentication:** Required (Event Owner or `ADMIN` role).
+    *   **Path Parameter:** `:eventId` (number).
+    *   **Request Body:**
+        ```json
+        {
+          "status": "PUBLISHED" // Enum: DRAFT, PUBLISHED, CANCELLED, COMPLETED
+        }
+        ```
+    *   **Success Response (200 OK):** The event object with the updated status.
+    *   **Frontend Action:** Update event status display, potentially trigger notifications or UI changes based on new status.
+    *   **Note:** Backend enforces valid status transitions (e.g., cannot publish an event without tickets if paid).
+
+---
+
+## 4. Key Data Structures (DTOs) Summary
+
+This section provides a summary of important Data Transfer Objects (DTOs) used in API requests and responses. For complete details, always refer to the Swagger documentation or the backend type definition files (`src/types/`).
+
+*   **`UserLoginDto` (Request for `POST /api/auth/login`):**
+    *   `email: string`
+    *   `password: string`
+
+*   **`UserRegistrationDto` (Request for `POST /api/auth/register`):**
+    *   `email: string`
+    *   `password: string`
+    *   `firstName: string`
+    *   `lastName: string`
+
+*   **`UserResponseDto` (Typical user object in responses):**
+    *   `id: number`
+    *   `email: string`
+    *   `firstName: string`
+    *   `lastName: string`
+    *   `role: string (PARTICIPANT | ORGANIZER | ADMIN)`
+    *   `createdAt: string (ISO Date)`
+    *   `updatedAt: string (ISO Date)`
+
+*   **`CreateEventDto` (Request for `POST /api/events`):**
+    *   `name: string`
+    *   `description: string`
+    *   `location: string`
+    *   `capacity: number`
+    *   `eventType: string (Enum: SPORTS, MUSICAL, SOCIAL, VOLUNTEERING)`
+    *   `isFree: boolean`
+    *   `startDateTime: string (ISO Date)`
+    *   `endDateTime: string (ISO Date)`
+    *   `tickets?: Array<TicketInputDto>` (Required if `isFree` is false)
+        *   `TicketInputDto`: `{ name: string, price: string (Decimal), quantityTotal: number, salesStart?: string (ISO Date), salesEnd?: string (ISO Date) }`
+    *   `questions?: Array<QuestionInputDto>`
+        *   `QuestionInputDto`: `{ questionText: string, questionType?: string (Enum), isRequired?: boolean, displayOrder: number, validationRules?: object }`
+
+*   **`UpdateEventDto` (Request for `PUT /api/events/:eventId`):**
+    *   Contains optional fields from `CreateEventDto`. Structure for updating `tickets` and `questions` should be confirmed (full replacement or partial patch).
+
+*   **`EventResponseDto` / `EventSummaryDto` (Typical event object in responses):**
+    *   `id: number`
+    *   `name: string`
+    *   `description?: string`
+    *   `location: string`
+    *   `capacity: number`
+    *   `eventType: string`
+    *   `isFree: boolean`
+    *   `startDateTime: string (ISO Date)`
+    *   `endDateTime: string (ISO Date)`
+    *   `status: string (Enum: DRAFT, PUBLISHED, CANCELLED, COMPLETED)`
+    *   `organiser: UserSummaryDto`
+    *   `tickets?: TicketResponseDto[]` (Typically in full event details)
+    *   `eventQuestions?: EventQuestionResponseDto[]` (Typically in full event details)
+    *   `_count?: { registrations: number }`
+
+*   **`CreateRegistrationDto` (Request for `POST /api/registrations`):**
+    *   `eventId: number`
+    *   `tickets: Array<{ ticketId: number, quantity: number }>` (Empty array `[]` for free events)
+    *   `participants: Array<ParticipantInputDto>`
+        *   `ParticipantInputDto`: `{ email: string, firstName: string, lastName: string, phoneNumber?: string, dateOfBirth?: string (ISO Date), ..., responses: Array<{ eventQuestionId: number, responseText: string }> }`
+
+*   **`CreateRegistrationResponse` (Response from `POST /api/registrations`):**
+    *   `message: string`
+    *   `registrationId: number`
+    *   `paymentToken?: string` (For guest registrations for paid events)
+
+*   **`CreatePaymentIntentDto` (Request for `POST /api/payments/create-intent`):**
+    *   `registrationId: number`
+    *   `paymentToken?: string` (For guest payments)
+
+*   **`CreatePaymentIntentResponse` (Response from `POST /api/payments/create-intent`):**
+    *   `clientSecret: string`
+    *   `paymentId: number`
+
+*(This is not an exhaustive list. Other DTOs for specific responses like individual ticket details, participant details, etc., can be found in Swagger or `src/types/`.)*
+
+---
+*(Next sections could include: User Profile Management, Ticket Management (by Organizers), detailed Registration Management views, Workflow Diagrams, etc.)*

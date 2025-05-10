@@ -88,7 +88,48 @@ Standard structure for a Node.js/Express/TypeScript project:
 ```
 *(Updated `summaries/` to `docs/`)*
 
-## 4. Implemented Features (as of Sprint 4, Week 1)
+## 4. Frontend System
+
+**Purpose:**
+Provides the user interface for interacting with the Event Registration System backend. Enables users (participants, organizers, and admins) to browse events, register, manage profiles, and access admin functionalities.
+
+**Technology Stack:**
+*   **Framework:** Vue.js (using Composition API and Pinia for state management)
+*   **Build Tool:** Vite
+*   **Routing:** Vue Router
+*   **API Communication:** Native Fetch API wrapped with custom authentication handling in Pinia store.
+
+**High-Level Architecture:**
+*   **Views (`src/views/`):** Top-level components representing different pages/routes.
+*   **Components (`src/components/`):** Reusable UI elements.
+*   **Router (`src/router/index.js`):** Defines application routes and maps them to views.
+*   **Store (`src/store/user.js`):** Pinia store for managing application state, including user authentication (`accessToken`, `role`) and a `customFetch` function for authenticated API calls.
+*   **API Services (`src/api/`):** Modules for making specific API calls to the backend (`events.js`, `locations.js`, `users.js`).
+
+**Key Views and User Flows (Based on Router):**
+*   **User-Facing:** Home, Event Listing, Event Detail, Sign In, Sign Up, Multi-step Registration/Questionnaire (Select Category, Personal Info, Questionnaire, Review, Checkout), User Profile, User Management (self), User Events.
+*   **Admin-Facing:** Dashboard, Event Management (List, Create, Detail, Edit), User Management (List, Create, Detail, Edit), Ticket Management (List, Management per Event, User/Participant Details, Create, Edit), Questionnaire Management (List, View per Event).
+
+**API Integration Points:**
+*   API calls are made from within views or API service files using `fetch` wrapped by the `userStore.customFetch` function to automatically include JWT for authenticated requests.
+*   API service files (`src/api/`):
+    *   `events.js`: Handles fetching/managing events and ticket types.
+    *   `locations.js`: Handles fetching locations (endpoint needs verification).
+    *   `users.js`: Handles fetching user profile and admin user management (endpoints need verification, admin routes currently commented out on backend).
+    *   `tickets.js`: (Deprecated - functions moved to `events.js`)
+
+**State Management:**
+*   Pinia is used for state management, with `useUserStore` handling authentication state (`accessToken`, `role`) and providing the `customFetch` utility.
+
+**Known Issues / Areas for Improvement (Frontend Specific):**
+*   Inconsistent use of `API_BASE_URL` vs `import.meta.env.VITE_API_BASE_URL` in older API functions (mostly resolved).
+*   Duplication of ticket-related API functions (resolved by removing from `tickets.js`).
+*   Potential endpoint mismatches for `/locations`, `/events/:eventId/attendees`, and admin user management endpoints (requires backend verification).
+*   Missing API functions for signup, registration, payment intent creation, and questionnaire submission (need to be implemented).
+*   Error handling in API calls could be more standardized and user-friendly.
+*   Admin user management backend routes are currently commented out, preventing full frontend integration.
+
+## 5. Implemented Features (as of Sprint 4, Week 1)
 
 *   **Authentication:** User registration, login, JWT generation/validation, refresh tokens, role-based access control middleware (`src/middlewares/authMiddlewares.ts`).
 *   **User Profile:** Fetching, updating user profiles, and password updates implemented and unit tested (`src/controllers/userController.ts`, `src/services/userServices.ts`, `src/__tests__/unit/userService.test.ts`).
