@@ -31,21 +31,32 @@ jest.mock('../../config/prisma', () => {
 });
 
 // Mock Stripe SDK
-const mockStripePaymentIntentRetrieve = jest.fn();
-const mockStripePaymentIntentCreate = jest.fn();
-const mockStripePaymentIntentUpdate = jest.fn(); // If you implement update logic
+
+// These are the actual mock functions we will use in our tests
+const mockPaymentIntentsCreateFn = jest.fn();
+const mockPaymentIntentsRetrieveFn = jest.fn();
+const mockPaymentIntentsUpdateFn = jest.fn();
 
 jest.mock('stripe', () => {
-    return jest.fn().mockImplementation(() => ({
-        paymentIntents: {
-            create: mockStripePaymentIntentCreate,
-            retrieve: mockStripePaymentIntentRetrieve,
-            update: mockStripePaymentIntentUpdate,
-        },
-        // webhooks.constructEvent is usually NOT mocked here if used in middleware,
-        // but if service directly calls it, it would be.
-        // For now, assuming middleware handles constructEvent.
-    }));
+  // This is the factory function for the 'stripe' module mock.
+  // It needs to return a mock constructor.
+  return jest.fn().mockImplementation(() => {
+    // This function is the mock constructor that gets called when `new Stripe(...)`
+    // is executed in your service.
+    // It should return an object simulating a Stripe instance.
+    return {
+      paymentIntents: {
+        create: mockPaymentIntentsCreateFn,
+        retrieve: mockPaymentIntentsRetrieveFn,
+        update: mockPaymentIntentsUpdateFn,
+      },
+      // If your service uses other Stripe instance properties/methods, mock them here too.
+      // For example, if it used stripe.webhooks.constructEvent directly (which it doesn't currently):
+      // webhooks: {
+      //   constructEvent: jest.fn(),
+      // },
+    };
+  });
 });
 
 // Mock bcrypt
@@ -55,10 +66,11 @@ jest.mock('bcrypt', () => ({
 
 describe('PaymentService', () => {
     beforeEach(() => {
-        jest.clearAllMocks();
-        // Reset Stripe mock return values if necessary for each test
-        mockStripePaymentIntentCreate.mockReset();
-        mockStripePaymentIntentRetrieve.mockReset();
+        // jest.clearAllMocks(); // This would also clear the functions above if not careful with re-assignment.
+                               // Instead, reset the specific mock functions we are using.
+        mockPaymentIntentsCreateFn.mockReset();
+        mockPaymentIntentsRetrieveFn.mockReset();
+        mockPaymentIntentsUpdateFn.mockReset();
     });
 
     describe('createPaymentIntent', () => {
@@ -89,14 +101,14 @@ describe('PaymentService', () => {
             const dto: CreatePaymentIntentDto = { registrationId: mockRegistrationId };
             (prisma.registration.findUnique as jest.Mock).mockResolvedValue(mockRegistrationBase);
             (prisma.payment.findUnique as jest.Mock).mockResolvedValue(null); // No existing payment
-            mockStripePaymentIntentCreate.mockResolvedValue({ id: mockPaymentIntentId, client_secret: mockClientSecret, status: 'requires_payment_method' });
+            mockPaymentIntentsCreateFn.mockResolvedValue({ id: mockPaymentIntentId, client_secret: mockClientSecret, status: 'requires_payment_method' });
             (prisma.payment.create as jest.Mock).mockResolvedValue({ id: mockPaymentId, stripePaymentIntentId: mockPaymentIntentId });
 
             const result = await createPaymentIntent(dto, authUserJwt);
 
             expect(result.clientSecret).toBe(mockClientSecret);
             expect(result.paymentId).toBe(mockPaymentId);
-            expect(mockStripePaymentIntentCreate).toHaveBeenCalledWith({
+            expect(mockPaymentIntentsCreateFn).toHaveBeenCalledWith({
                 amount: 7550, // 75.50 * 100
                 currency: 'aud',
                 metadata: {
@@ -125,14 +137,14 @@ describe('PaymentService', () => {
             (prisma.registration.findUnique as jest.Mock).mockResolvedValue(mockGuestRegistration);
             (bcrypt.compare as jest.Mock).mockResolvedValue(true); // Token matches
             (prisma.payment.findUnique as jest.Mock).mockResolvedValue(null);
-            mockStripePaymentIntentCreate.mockResolvedValue({ id: mockPaymentIntentId, client_secret: mockClientSecret, status: 'requires_payment_method' });
+            mockPaymentIntentsCreateFn.mockResolvedValue({ id: mockPaymentIntentId, client_secret: mockClientSecret, status: 'requires_payment_method' });
             (prisma.payment.create as jest.Mock).mockResolvedValue({ id: mockPaymentId, stripePaymentIntentId: mockPaymentIntentId });
 
             const result = await createPaymentIntent(dto, null); // No authUser for guest
 
             expect(result.clientSecret).toBe(mockClientSecret);
             expect(bcrypt.compare).toHaveBeenCalledWith(guestPaymentToken, hashedGuestPaymentToken);
-            expect(mockStripePaymentIntentCreate).toHaveBeenCalled();
+            expect(mockPaymentIntentsCreateFn).toHaveBeenCalled();
         });
         
         it('should throw AuthorizationError if guest paymentToken is expired', async () => {
@@ -208,13 +220,13 @@ describe('PaymentService', () => {
             
             (prisma.registration.findUnique as jest.Mock).mockResolvedValue(mockRegistrationBase);
             (prisma.payment.findUnique as jest.Mock).mockResolvedValue(existingPayment);
-            mockStripePaymentIntentRetrieve.mockResolvedValue({ id: mockPaymentIntentId, client_secret: mockClientSecret, status: 'requires_payment_method' });
+            mockPaymentIntentsRetrieveFn.mockResolvedValue({ id: mockPaymentIntentId, client_secret: mockClientSecret, status: 'requires_payment_method' });
 
             const result = await createPaymentIntent(dto, authUserJwt);
 
             expect(result.clientSecret).toBe(mockClientSecret);
-            expect(mockStripePaymentIntentRetrieve).toHaveBeenCalledWith(mockPaymentIntentId);
-            expect(mockStripePaymentIntentCreate).not.toHaveBeenCalled();
+            expect(mockPaymentIntentsRetrieveFn).toHaveBeenCalledWith(mockPaymentIntentId);
+            expect(mockPaymentIntentsCreateFn).not.toHaveBeenCalled();
         });
 
         it('should throw AppError if existing payment intent has already succeeded', async () => {
@@ -223,7 +235,7 @@ describe('PaymentService', () => {
 
             (prisma.registration.findUnique as jest.Mock).mockResolvedValue(mockRegistrationBase);
             (prisma.payment.findUnique as jest.Mock).mockResolvedValue(existingSucceededPayment);
-            mockStripePaymentIntentRetrieve.mockResolvedValue({ id: mockPaymentIntentId, client_secret: mockClientSecret, status: 'succeeded' });
+            mockPaymentIntentsRetrieveFn.mockResolvedValue({ id: mockPaymentIntentId, client_secret: mockClientSecret, status: 'succeeded' });
             
             await expect(createPaymentIntent(dto, authUserJwt))
                 .rejects.toThrow(new AppError(400, 'Payment has already succeeded for this registration.'));

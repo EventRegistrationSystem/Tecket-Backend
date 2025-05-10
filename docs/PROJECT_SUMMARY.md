@@ -1,6 +1,6 @@
 # Project Summary: Event Registration System Backend
 
-**Last Updated:** 08/05/2025
+**Last Updated:** 10/05/2025
 
 ## 1. Project Purpose and Core Functionalities
 
@@ -21,10 +21,11 @@ To provide a robust backend API for managing events, registrations, tickets, and
 *   **Questionnaire Management:** Custom questions per event, response collection from participants during registration, now linked via the `Attendee` model.
 *   **Payment Processing:** **(In Progress - Stripe Backend Setup)**
     *   Secure handling of payments for paid event tickets using Stripe.
-    *   Backend setup for creating Stripe Payment Intents (`POST /api/payments/create-intent`) is complete, including validation and authorization (supports both logged-in users via JWT and guests via temporary payment tokens).
-    *   **Guest Payment Token System:** Implemented temporary, hashed, expiring tokens stored in the `Purchase` table to authorize guest payment intent creation. Tokens are generated and returned during guest registration for paid events.
-    *   **Webhook Handling:** Basic webhook handler (`POST /api/payments/webhook/stripe`) implemented to process `payment_intent.succeeded` and `payment_intent.payment_failed` events, updating `Payment` and `Registration` status accordingly.
-    *   **Webhook Signature Verification:** Middleware implemented and applied to verify webhook requests originate from Stripe.
+    *   Creating Stripe Payment Intents (`POST /api/payments/create-intent`) is implemented and manually tested for guest and logged-in users. Authorization correctly uses JWT for authenticated users (via `optionalAuthenticate` middleware) and temporary payment tokens for guests.
+    *   **Guest Payment Token System:** Implemented and manually tested (generation, hashing, storage, expiry, validation during payment intent creation).
+    *   **Webhook Handling:** Webhook handler (`POST /api/payments/webhook/stripe`) for `payment_intent.succeeded` and `payment_intent.payment_failed` events is implemented and has been manually tested, correctly updating `Payment` and `Registration` statuses.
+    *   **Webhook Signature Verification:** Middleware implemented, reviewed, corrected, and manually tested.
+    *   **Raw Body Parsing for Webhooks:** Correctly configured in `app.ts` using `express.raw()` for the specific webhook route.
 *   **Reporting & Analytics:** (Planned) Data collection to support future reporting for organizers/admins.
 
 ## 2. Technology Stack
@@ -95,21 +96,22 @@ Standard structure for a Node.js/Express/TypeScript project:
 *   **Ticket Management:** CRUD for ticket types associated with events, pricing, availability checks, sales periods, validation against sold quantities, ownership authorization checks. Routes refactored for consistency (`/events/:eventId/tickets/:ticketId`). Ownership authorization added to service layer (`src/controllers/ticketController.ts`, `src/services/ticketServices.ts`). Good unit test coverage (`src/__tests__/unit/ticketService.test.ts`).
 *   **Registration System:**
     *   Creation implemented for guests/users.
-    *   **Refactored to support multiple participants (attendees) and multiple ticket types per registration.** Includes `Attendee` and `PurchaseItem` models.
+    *   **Refactored to support multiple participants (attendees) and multiple ticket types per registration.** Includes `Attendee` and `PurchaseItem` models. Manually tested for guest and logged-in user scenarios.
+    *   `optionalAuthenticate` middleware now used for `POST /api/registrations` to securely derive `userId` from JWT for authenticated users. `CreateRegistrationDto` and Joi validation updated to remove `userId` from request body.
     *   Handles conditional status (`PENDING` for paid, `CONFIRMED` for free).
     *   Retrieval (`GET /registrations`, `GET /registrations/:id`) implemented with authorization and updated includes.
     *   **Cancellation implemented** (`PATCH /registrations/:registrationId`) allowing owner/admin to cancel, including decrementing ticket count based on `PurchaseItem` quantities.
-    *   **Validation re-enabled** for `POST /registrations` using Joi, including custom validation.
-*   **Questionnaire Management:** Custom questions per event, response collection from participants during registration, linked via `Attendee`.
-*   **Payment Processing:** **(Backend Setup Complete)**
+    *   **Validation re-enabled** for `POST /registrations` using Joi, including custom validation for matching participant count to ticket quantity.
+*   **Questionnaire Management:** Custom questions per event, response collection from participants during registration, now linked via `Attendee`.
+*   **Payment Processing:** **(Core Backend Functionality Manually Tested)**
     *   Added Stripe dependencies and configured environment variables.
     *   Updated `Payment` and `Purchase` models in Prisma schema and migrated database.
     *   Created payment types, service, controller, and routes.
-    *   Implemented logic for creating Stripe Payment Intents (`createPaymentIntent`) with validation and authorization (supports JWT for users, temporary tokens for guests).
-    *   Implemented **Guest Payment Token System** (generation, hashing, storage, expiry, validation).
-    *   Implemented basic webhook handler (`handleWebhookEvent`) for success/failure events.
-    *   Implemented **Webhook Signature Verification** middleware.
-    *   Configured `express.raw()` middleware for webhook route in `app.ts`.
+    *   Implemented and manually tested logic for creating Stripe Payment Intents (`createPaymentIntent`) with validation and authorization. Uses `optionalAuthenticate` middleware for JWT-based user identification, and temporary tokens for guests.
+    *   Implemented and manually tested **Guest Payment Token System** (generation, hashing, storage, expiry, validation).
+    *   Implemented and manually tested webhook handler (`handleWebhookEvent`) for `payment_intent.succeeded` and `payment_intent.payment_failed` events, including database status updates.
+    *   Implemented, reviewed, corrected, and manually tested **Webhook Signature Verification** middleware.
+    *   Correctly configured `express.raw()` middleware for the webhook route in `app.ts`.
 *   **Database:** Schema defined (`prisma/schema.prisma`), migrations applied (`prisma/migrations/`), seeding script (`prisma/seed.ts`). Includes migrations for Attendee, PurchaseItem, and Guest Payment Token refactors.
 *   **Basic Setup:** Project structure, dependencies, TypeScript config, Jest setup (`src/__tests__/setup.ts`) including test DB cleanup logic.
 *   **API Documentation:** Basic Swagger setup (`src/config/swagger.ts`) exists, needs population/refinement.
@@ -118,29 +120,33 @@ Standard structure for a Node.js/Express/TypeScript project:
 ## 5. Known Issues, Limitations & Technical Debt
 
 *   **Registration Features:** Full registration *updates* not implemented. Cancellation logic does not yet include *refund processing* for paid events.
-*   **Unit Testing:** Unit tests for `RegistrationService` need updating to reflect multi-participant/multi-ticket refactoring. Unit tests for `PaymentService` need to be created.
-*   **Admin Features:** Admin user management endpoints are defined in routes but not implemented (deferred).
+*   **Unit Testing:** 
+    *   Unit tests for `RegistrationService` (covering multi-participant/multi-ticket refactoring and various scenarios) have been created and are **PASSING**.
+    *   Initial unit tests for `PaymentService` have been created, but are currently encountering Jest mocking/hoisting issues. Further work on these specific tests is temporarily paused.
+*   **Admin Features:** Admin user management endpoints are defined in routes; implementation is currently in progress by Steven.
 *   **Integration Testing:** No integration tests currently exist.
 *   **Error Handling:** Could be standardized further across all services/controllers. Webhook error handling could be more robust (e.g., retry mechanisms, alerting).
 *   **Logging:** Minimal logging implemented.
 *   **Image Uploads:** No functionality for handling image uploads.
 *   **Notifications:** No email or other notification system implemented.
 *   **Participant Service:** Minimal implementation (`findOrCreateParticipant` only). Lacks dedicated get/update methods.
-*   **Payment Module:** Requires thorough testing (manual API, unit, integration), and frontend integration. Webhook handler needs refinement for more event types if necessary. Currency is currently hardcoded ('aud'). Guest payment token invalidation after use is not yet implemented.
+*   **Payment Module:** Core manual API flows for registration, payment intent creation, and webhook handling (success/failure) have been tested. Still requires comprehensive unit and integration testing, and frontend integration. Webhook handler needs refinement for more event types if necessary. Currency is currently hardcoded ('aud'). Guest payment token invalidation after use is not yet implemented (logic present but commented out in `PaymentService`).
 
 ## 6. Immediate Next Steps & Future Development Plan
 
-**Current Focus (Sprint 4):**
-*   **Test Payment Flow:** Manually test payment intent creation (guest and user) and webhook handling using Stripe CLI. (High Priority)
+**Current Focus (Sprint 4 - Updated):**
+*   **Manually Test Payment Flow:** Payment intent creation (guest and user) and webhook handling (`payment_intent.succeeded`, `payment_intent.payment_failed`) using Stripe CLI and mock UI **COMPLETED**.
+*   **Unit Testing:** 
+    *   `RegistrationService` unit tests: **COMPLETED & PASSING**.
+    *   `PaymentService` unit tests: Fix Jest mocking issues and complete tests. (High Priority - Currently Paused)
 *   **Implement Refund Logic:** Add refund processing (via Stripe API) to the `cancelRegistration` method. (High Priority)
 *   **Frontend Integration:** Work with frontend to integrate Stripe Elements and the payment backend endpoints. (Very High Priority)
 
 **Future Development Plan (Prioritized based on existing Frontend):**
-1.  **Admin User Management:** Implement deferred admin endpoints for user management needed by admin dashboard. (High Priority)
+1.  **Admin User Management:** Implementation in progress by team member. (High Priority)
 2.  **Email Notifications:** Implement email sending for key user flows (registration, cancellation, password reset). (High Priority)
-3.  **Unit Testing:** Update/add unit tests for Registration and Payment services. (Medium Priority)
-4.  **Integration Testing:** Add API-level tests for key user flows (registration, payment). (Medium Priority - Ongoing)
-5.  **Deployment:** Plan and begin setup on Render (Web Service, DB, Env Vars, Migrations). (Medium Priority - Ongoing)
+3.  **Integration Testing:** Add API-level tests for key user flows (registration, payment). (Medium Priority - Ongoing)
+4.  **Deployment:** Plan and begin setup on Render (Web Service, DB, Env Vars, Migrations). (Medium Priority - Ongoing)
 6.  **Reporting System (Basic):** Implement basic organizer reports if required by admin dashboard, otherwise potentially defer. (Low/Medium Priority)
 7.  **Refine API & Support Frontend:** Address any specific data needs or endpoint adjustments identified during frontend refinement. (Ongoing)
 8.  **Advanced Features:** Advanced reporting, image uploads, etc. (Lower Priority)
