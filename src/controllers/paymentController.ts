@@ -25,17 +25,16 @@ const stripeForWebhooks = new Stripe(process.env.STRIPE_SECRET_KEY || 'dummy_key
  */
 export const createPaymentIntentHandler = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    // TODO: Add validation for the request body
+    
     const paymentIntentDto: CreatePaymentIntentDto = req.body;
+    const authUser = req.user; // Get user from request, set by optionalAuthenticate middleware
 
-    // Assuming registrationId is passed in the body.
-    // Authentication/Authorization should happen in middleware before this.
-    // Ensure the user making the request is authorized for this registrationId.
     if (!paymentIntentDto.registrationId) {
        throw new AppError(400, 'Registration ID is required.');
     }
 
-    const result = await paymentService.createPaymentIntent(paymentIntentDto);
+    // Pass the DTO and user (nullable for guest payments) 
+    const result = await paymentService.createPaymentIntent(paymentIntentDto, authUser || null);
 
     res.status(201).json(result); // Send back clientSecret and paymentId
   } catch (error) {

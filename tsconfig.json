@@ -14,8 +14,8 @@
     /* Type Checking */
     "strict": true,                                      /* Enable all strict type-checking options. */
     "skipLibCheck": true,                                 /* Skip type checking all .d.ts files. */
-    "types": ["node"]                           /* Type declaration files to be included in the compilation. */
+    "types": ["node", "jest"]                       /* Type declaration files to be included in the compilation. */
   },
-  "include": ["src"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/__tests__/**"]
+  "include": ["src", "src/__tests__"], // Include test files for type checking by editor/ts-jest
+  "exclude": ["node_modules", "dist"] // Main `tsc` build will still exclude tests if they aren't explicitly in `src` for `outDir`
 }

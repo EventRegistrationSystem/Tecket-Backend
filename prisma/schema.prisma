@@ -140,7 +140,7 @@ model EventQuestions {
 
 model Response {
   id             Int    @id @default(autoincrement()) @map("id")
-  registrationId Int    @map("registration_id")
+  attendeeId     Int    @map("attendee_id") // Add link to Attendee
   eqId           Int    @map("eq_id")
   responseText   String @map("response_text") @db.Text
 
@@ -148,10 +148,31 @@ model Response {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
-  registration  Registration   @relation(fields: [registrationId], references: [id])
+  attendee      Attendee       @relation(fields: [attendeeId], references: [id]) 
   eventQuestion EventQuestions @relation(fields: [eqId], references: [id])
 
   @@map("responses")
+}
+
+// New model to link Registration and Participant for each attendee
+model Attendee {
+  id             Int      @id @default(autoincrement())
+  registrationId Int      @map("registration_id")
+  participantId  Int      @map("participant_id")
+  // Optional: Add ticketId if specific ticket types need assignment
+  // ticketId       Int?     @map("ticket_id")
+  // Optional: Add a unique ticket code if needed for check-in/validation
+  // ticketCode     String?  @unique @map("ticket_code")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  registration Registration @relation(fields: [registrationId], references: [id])
+  participant  Participant  @relation(fields: [participantId], references: [id])
+  // ticket       Ticket?      @relation(fields: [ticketId], references: [id]) // Uncomment if ticketId added
+  responses    Response[]   // Link responses to this attendee
+
+  @@map("attendees")
 }
 
 model Participant {
@@ -170,7 +191,8 @@ model Participant {
   updatedAt      DateTime  @updatedAt @map("updated_at")
 
   // Relations
-  registrations  Registration[]
+  registrations  Registration[] // Relation to registrations where this participant is primary
+  attendees      Attendee[]   // Add relation: instances where this participant is an attendee
   userId         Int?      @map("user_id") // Optional link to user account
   user           User?     @relation(fields: [userId], references: [id])
 
@@ -190,12 +212,12 @@ model Registration {
   updated_at DateTime @updatedAt @map("updated_at")
 
   // Relations
-  
-  event     Event      @relation(fields: [eventId], references: [id])
-  participant Participant @relation(fields: [participantId], references: [id])
-  user      User?      @relation(fields: [userId], references: [id])
-  purchase  Purchase?
-  responses Response[]
+  event       Event        @relation(fields: [eventId], references: [id])
+  participant Participant  @relation(fields: [participantId], references: [id]) // Primary participant
+  user        User?        @relation(fields: [userId], references: [id])
+  purchase    Purchase?
+  // responses Response[] 
+  attendees   Attendee[]   
 
   @@map("registrations")
 }
@@ -216,7 +238,7 @@ model Ticket {
 
   // Relations
   event     Event      @relation(fields: [eventId], references: [id])
-  purchases Purchase[]
+  purchaseItems PurchaseItem[] // Added relation to PurchaseItem
 
   @@map("tickets")
 }
@@ -224,20 +246,36 @@ model Ticket {
 model Purchase {
   id             Int     @id @default(autoincrement()) @map("id")
   registrationId Int     @unique @map("registration_id")
-  ticketId       Int     @unique @map("ticket_id")
-  quantity       Int
-  unitPrice      Decimal @map("unit_price") @db.Decimal(10, 2)
-  totalPrice     Decimal @map("total_price") @db.Decimal(10, 2)
+  totalPrice     Decimal @map("total_price") @db.Decimal(10, 2) 
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt() @map("updated_at")
 
   // Relations
   registration Registration @relation(fields: [registrationId], references: [id])
-  ticket       Ticket       @relation(fields: [ticketId], references: [id])
   payment      Payment?
+  items        PurchaseItem[] // Added relation to PurchaseItem
+
+  // Fields for guest payment authorization
+  paymentToken       String?   @unique @map("payment_token") 
+  paymentTokenExpiry DateTime? @map("payment_token_expiry")
 
   @@map("purchases")
+}
+
+// New model for individual items within a purchase
+model PurchaseItem {
+  id        Int     @id @default(autoincrement())
+  purchaseId Int     @map("purchase_id")
+  ticketId   Int     @map("ticket_id")
+  quantity   Int
+  unitPrice  Decimal @map("unit_price") @db.Decimal(10, 2) // Price per ticket at time of purchase
+
+  // Relations
+  purchase Purchase @relation(fields: [purchaseId], references: [id])
+  ticket   Ticket   @relation(fields: [ticketId], references: [id])
+
+  @@map("purchase_items")
 }
 
 model Payment {

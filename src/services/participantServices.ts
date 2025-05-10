@@ -21,11 +21,14 @@ export class ParticipantService {
         });
 
         if (!participant) {
+            // The 'participantData' received here is effectively a 'ParticipantInput' from RegistrationService
+            const { responses, ...restOfParticipantData } = participantData as any; // Cast to any to handle extra fields like responses
+
             participant = await tx.participant.create({
                 data: {
-                    ...participantData,
+                    ...restOfParticipantData,
                     // Ensure dateOfBirth is handled correctly (string vs Date)
-                    dateOfBirth: participantData.dateOfBirth ? new Date(participantData.dateOfBirth) : null,
+                    dateOfBirth: restOfParticipantData.dateOfBirth ? new Date(restOfParticipantData.dateOfBirth) : null,
                 }
             });
         } else {

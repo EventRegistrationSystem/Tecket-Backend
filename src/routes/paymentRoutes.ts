@@ -1,18 +1,18 @@
 import express from 'express';
 import * as paymentController from '../controllers/paymentController';
-import { authenticate, authorize } from '../middlewares/authMiddlewares'; // Corrected middleware names
-import { UserRole } from '@prisma/client';
+import { optionalAuthenticate, validateRequest } from '../middlewares/authMiddlewares'; 
+import { createPaymentIntentSchema } from '../validation/paymentValidation';
+import { verifyStripeWebhook } from '../middlewares/stripeWebhookMiddleware';
 
 const router = express.Router();
 
 // POST /api/payments/create-intent
 // Creates a Stripe Payment Intent for a registration
-// Requires authentication (e.g., logged-in participant)
-router.post(
+// This route is used for both authenticated and guest users
+router.post(  
   '/create-intent',
-  authenticate, 
-  // Add authorization if needed (e.g., check if user owns the registrationId)
-  // authorize(UserRole.PARTICIPANT, UserRole.ADMIN), 
+  validateRequest(createPaymentIntentSchema), 
+  optionalAuthenticate,
   paymentController.createPaymentIntentHandler
 );
 
@@ -22,7 +22,9 @@ router.post(
 // This middleware should be applied in src/app.ts where this router is mounted.
 router.post(
   '/webhook/stripe',
+  
   // No authentication needed for webhooks, Stripe verifies via signature
+  verifyStripeWebhook,
   paymentController.handleStripeWebhook
 );
 
