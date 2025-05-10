@@ -1,0 +1,44 @@
+# Node
+node_modules
+npm-debug.log
+yarn-error.log
+yarn.lock
+
+# TypeScript
+*.tsbuildinfo
+dist
+
+# Prisma
+# Migrations are applied by Prisma CLI, not copied directly
+prisma/migrations/* 
+prisma/dev.db # SQLite dev database
+prisma/dev.db-journal
+
+# Environment files
+.env*
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs
+*.log.*
+
+# Test / Coverage
+coverage
+src/__tests__
+jest.config.ts
+jest.setup.js
+
+# IDE / Editor specific
+.vscode
+.idea
+*.sublime-project
+*.sublime-workspace
+
+# Other
+render.yaml
+render-build.sh
+docs/
