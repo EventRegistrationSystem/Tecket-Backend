@@ -113,51 +113,53 @@ All dates/timestamps returned by the API are in ISO 8601 format (e.g., `2025-05-
 
 ### 3.1. Event Management (Focus: Viewing Events)
 
-This section details how users can fetch and view event information.
+This section details how users (guests, participants, organizers) can fetch and view event information.
 
-*   **List All Published Events:** `GET /api/events`
-    *   **Purpose:** Retrieves a paginated list of events that are `PUBLISHED` and thus visible to the general public.
-    *   **Authentication:** Optional. Results are the same for guests and logged-in users (unless future personalization is added).
-    *   **Query Parameters for Filtering & Pagination:**
-        *   `search=<string>`: Filters events by name or description containing the search term.
-        *   `eventType=<MUSICAL|SPORTS|SOCIAL|VOLUNTEERING>`: Filters by event type.
-        *   `isFree=<true|false>`: Filters by free or paid events.
-        *   `location=<string>`: Filters by location (partial match).
-        *   `startDate=<YYYY-MM-DD>`: Events starting on or after this date.
-        *   `endDate=<YYYY-MM-DD>`: Events ending on or before this date.
-        *   `page=<number>`: Page number for pagination.
-        *   `limit=<number>`: Number of events per page.
+*   **List Events (Public View & Organizer's View):** `GET /api/events`
+    *   **Purpose:** Retrieves a paginated list of events.
+        *   For **guests or general logged-in participants**, this typically shows `PUBLISHED` events.
+        *   For **authenticated `ORGANIZER`s**, this endpoint can be used to view all their own events (across different statuses) by using the `myEvents=true` query parameter.
+    *   **Authentication:** `optionalAuthenticate` is used.
+        *   If no token is provided (guest) or user is `PARTICIPANT`: Shows publicly available (`PUBLISHED`) events.
+        *   If an `ORGANIZER` is authenticated and sends `myEvents=true`: Shows events owned by that organizer. Can also filter by `status`.
+    *   **Query Parameters for Filtering & Pagination (Public/General):**
+        *   `search=<string>`: Filters events by name or description.
+        *   `eventType=<MUSICAL|SPORTS|SOCIAL|VOLUNTEERING>`
+        *   `isFree=<true|false>`
+        *   `location=<string>`
+        *   `startDate=<YYYY-MM-DD>`
+        *   `endDate=<YYYY-MM-DD>`
+        *   `page=<number>`, `limit=<number>`
+    *   **Query Parameters for Organizers (when `Authorization` header is present):**
+        *   `myEvents=true`: **Required** for an organizer to see their own events across all statuses.
+        *   `status=<DRAFT|PUBLISHED|CANCELLED|COMPLETED>`: Used in conjunction with `myEvents=true` to filter by status.
+        *   Other public filters (`search`, `eventType`, etc.) can also be combined.
     *   **Success Response (200 OK):**
         ```json
+        // Example structure (refer to Swagger for exact fields)
         {
           "message": "Events retrieved successfully",
-          "data": [
-            {
-              "id": 1,
-              "name": "Annual Music Festival",
-              "description": "A great music festival...",
-              "location": "Melbourne Showgrounds",
-              "capacity": 5000,
-              "eventType": "MUSICAL",
-              "isFree": false,
-              "startDateTime": "2025-07-20T10:00:00.000Z",
-              "endDateTime": "2025-07-22T23:00:00.000Z",
-              "status": "PUBLISHED",
-              "organiser": { "id": 10, "firstName": "John", "lastName": "Smith" }, // Summary
-              "_count": { "registrations": 123 } // Number of current registrations
-              // ... other summary fields as defined in Swagger/DTO
-            }
-            // ... more events
-          ],
-          "pagination": { /* ... pagination object ... */ }
+          "data": { // Note: Your Swagger shows response as { success: boolean, data: { events: [], pagination: {} } }
+            "events": [ 
+              {
+                "id": 1,
+                "name": "Annual Music Festival",
+                "status": "PUBLISHED", // Or DRAFT, CANCELLED if organizer viewing myEvents
+                // ... other event summary fields
+              }
+            ],
+            "pagination": { /* ... pagination object ... */ }
+          }
         }
         ```
-    *   **Frontend Action:** Display events in a list or card view. Implement filtering UI based on available query parameters. Handle pagination.
+    *   **Frontend Action:**
+        *   For public view: Display published events with filters.
+        *   For organizer dashboard: If user is an `ORGANIZER`, provide an option/view to list "My Events". When this view is active, the frontend should make the `GET /api/events` call with the `Authorization` header and the `myEvents=true` query parameter. Allow further filtering by `status`, etc.
 
-*   **Get Single Event Details:** `GET /api/events/:eventId`
+*   **Get Single Event Details:** `GET /api/events/:id` (Note: path parameter is `:id` as per your routes)
     *   **Purpose:** Retrieves comprehensive details for a specific event, including available tickets and registration questions.
-    *   **Authentication:** Optional.
-    *   **Path Parameter:** `:eventId` (number) - The ID of the event.
+    *   **Authentication:** Optional. Publicly accessible.
+    *   **Path Parameter:** `:id` (number) - The ID of the event.
     *   **Success Response (200 OK):**
         ```json
         {
@@ -368,24 +370,14 @@ This follows a `PENDING` registration for a paid event.
         3.  **WebSockets (Advanced):** If implemented, the backend could push a real-time status update to the connected frontend client. (Specify if not implemented).
         *Frontend Dev Note: Do not consider the registration fully complete and fulfilled based *only* on the Stripe.js `confirmCardPayment` success. Always ensure the user is directed to a state where the backend-confirmed status is eventually checked and displayed.*
 
-### 3.4. Event Management (Organizer Perspective)
+### 3.4. Event Management (Organizer & Admin Actions)
 
-This section details endpoints primarily used by users with the `ORGANIZER` role to create and manage their events. All endpoints here require authentication and appropriate authorization (typically ownership of the event or `ADMIN` role).
-
-*   **List Organizer's Events:** `GET /api/events/my-events`
-    *   **Purpose:** Retrieves a paginated list of events created by the currently authenticated organizer.
-    *   **Authentication:** Required (`ORGANIZER` or `ADMIN` role).
-    *   **Query Parameters for Filtering & Pagination:**
-        *   `status=<DRAFT|PUBLISHED|CANCELLED|COMPLETED>`: Filter by event status.
-        *   `search=<string>`: Filter by name/description.
-        *   `page=<number>`, `limit=<number>` for pagination.
-    *   **Success Response (200 OK):** Paginated list of event objects (full detail or summary as per backend implementation).
-        *   *Frontend Dev Note: Check Swagger for the exact response structure.*
-    *   **Frontend Action:** Display a dashboard or list for organizers to see and manage their events.
+This section details endpoints primarily used by users with `ORGANIZER` or `ADMIN` roles to create and manage events. All endpoints here require authentication and appropriate authorization.
 
 *   **Create New Event:** `POST /api/events`
-    *   **Purpose:** Allows an authenticated `ORGANIZER` to create a new event.
-    *   **Authentication:** Required (`ORGANIZER` role).
+    *   **Purpose:** Allows an authenticated `ORGANIZER` (or `ADMIN`) to create a new event.
+    *   **Authentication:** Required (`ORGANIZER` or `ADMIN` role - your route shows `authenticate` which implies any authenticated user, then `EventController.createEvent` would need to assign `organiserId` from `req.user.userId`. Confirm if specific role authorization is needed at route or handled in service).
+    *   *Frontend Dev Note: The `createEventSchema` is used for validation. Ensure the request body matches this schema.*
     *   **Request Body (`CreateEventDto` - refer to Swagger/types for full structure):**
         ```json
         {
@@ -434,9 +426,9 @@ This section details endpoints primarily used by users with the `ORGANIZER` role
 
 *   **Update Existing Event:** `PUT /api/events/:eventId`
     *   **Purpose:** Allows the event organizer (or admin) to update details of an existing event.
-    *   **Authentication:** Required (Event Owner or `ADMIN` role).
-    *   **Path Parameter:** `:eventId` (number).
-    *   **Request Body (`UpdateEventDto` - partial updates allowed, send only fields to change):**
+    *   **Authentication:** Required (`ORGANIZER` or `ADMIN` role).
+    *   **Path Parameter:** `:id` (number) - The ID of the event.
+    *   **Request Body (`UpdateEventDto` / `CreateEventRequest` from Swagger - partial updates allowed, send only fields to change):**
         ```json
         {
           "description": "An updated description for this awesome conference.",
@@ -450,18 +442,18 @@ This section details endpoints primarily used by users with the `ORGANIZER` role
     *   **Success Response (200 OK):** The updated event object.
     *   **Frontend Action:** Refresh event details display.
 
-*   **Delete Event:** `DELETE /api/events/:eventId`
+*   **Delete Event:** `DELETE /api/events/:id`
     *   **Purpose:** Allows the event organizer (or admin) to delete an event.
-    *   **Authentication:** Required (Event Owner or `ADMIN` role).
-    *   **Path Parameter:** `:eventId` (number).
+    *   **Authentication:** Required (`ORGANIZER` or `ADMIN` role).
+    *   **Path Parameter:** `:id` (number) - The ID of the event.
     *   **Success Response (204 No Content or 200 OK with message):**
     *   **Frontend Action:** Remove event from lists, confirm deletion.
     *   **Note:** Deletion might be restricted if the event has existing registrations (backend should enforce this).
 
-*   **Update Event Status:** `PATCH /api/events/:eventId/status`
+*   **Update Event Status:** `PATCH /api/events/:id/status`
     *   **Purpose:** Allows the organizer/admin to change the event's status (e.g., from `DRAFT` to `PUBLISHED`, or to `CANCELLED`).
-    *   **Authentication:** Required (Event Owner or `ADMIN` role).
-    *   **Path Parameter:** `:eventId` (number).
+    *   **Authentication:** Required (`ORGANIZER` or `ADMIN` role).
+    *   **Path Parameter:** `:id` (number) - The ID of the event.
     *   **Request Body:**
         ```json
         {
@@ -471,6 +463,81 @@ This section details endpoints primarily used by users with the `ORGANIZER` role
     *   **Success Response (200 OK):** The event object with the updated status.
     *   **Frontend Action:** Update event status display, potentially trigger notifications or UI changes based on new status.
     *   **Note:** Backend enforces valid status transitions (e.g., cannot publish an event without tickets if paid).
+
+### 3.5. Ticket Management (Organizer Perspective)
+
+This section covers how authenticated `ORGANIZER`s can manage ticket types for their events. These routes are typically nested under an event. The base path for these ticket routes is `/api/events/:eventId/tickets`.
+
+*   **Create New Ticket Type for an Event:** `POST /api/events/:eventId/tickets`
+    *   **Purpose:** Allows an `ORGANIZER` to add a new ticket type (e.g., "General Admission", "VIP") to one of their events.
+    *   **Authentication:** Required (`ORGANIZER` role and ownership of the event).
+    *   **Path Parameter:** `:eventId` (number) - The ID of the event to which this ticket type will be added.
+    *   **Request Body (`CreateTicketRequest` - from OpenAPI schema):**
+        ```json
+        {
+          "name": "Early Bird Special",
+          "description": "Limited availability early bird ticket.",
+          "price": 40.00,
+          "quantityTotal": 50,
+          "salesStart": "2025-06-01T00:00:00Z",
+          "salesEnd": "2025-06-30T23:59:59Z"
+          // "status" is optional, defaults to ACTIVE
+        }
+        ```
+    *   **Success Response (201 Created - `TicketDetailResponse`):**
+        ```json
+        {
+          "success": true,
+          "data": {
+            "id": 201,
+            "eventId": 1,
+            "name": "Early Bird Special",
+            "description": "Limited availability early bird ticket.",
+            "price": 40.00,
+            "quantityTotal": 50,
+            "quantitySold": 0,
+            "salesStart": "2025-06-01T00:00:00Z",
+            "salesEnd": "2025-06-30T23:59:59Z",
+            "status": "ACTIVE",
+            "createdAt": "YYYY-MM-DDTHH:mm:ss.sssZ",
+            "updatedAt": "YYYY-MM-DDTHH:mm:ss.sssZ"
+          }
+        }
+        ```
+    *   **Frontend Action:** After successful creation, update the UI to display the new ticket type in the event's management interface.
+
+*   **Update Existing Ticket Type:** `PUT /api/events/:eventId/tickets/:ticketId`
+    *   **Purpose:** Allows an `ORGANIZER` to modify details of an existing ticket type for their event.
+    *   **Authentication:** Required (`ORGANIZER` role and ownership of the event).
+    *   **Path Parameters:**
+        *   `:eventId` (number) - The ID of the event.
+        *   `:ticketId` (number) - The ID of the ticket type to update.
+    *   **Request Body (`UpdateTicketRequest` - from OpenAPI schema, send only fields to change):**
+        ```json
+        {
+          "price": 45.00,
+          "quantityTotal": 75,
+          "status": "INACTIVE" // Example: temporarily deactivate sales
+        }
+        ```
+    *   **Success Response (200 OK - `TicketDetailResponse`):** The updated ticket object.
+    *   **Frontend Action:** Refresh the display of the ticket type with the new details.
+
+*   **Delete Ticket Type:** `DELETE /api/events/:eventId/tickets/:ticketId`
+    *   **Purpose:** Allows an `ORGANIZER` to delete a ticket type from their event.
+    *   **Authentication:** Required (`ORGANIZER` role and ownership of the event).
+    *   **Path Parameters:**
+        *   `:eventId` (number) - The ID of the event.
+        *   `:ticketId` (number) - The ID of the ticket type to delete.
+    *   **Success Response (200 OK with message or 204 No Content):**
+        ```json
+        {
+          "success": true,
+          "message": "Ticket deleted successfully"
+        }
+        ```
+    *   **Frontend Action:** Remove the ticket type from the event's management UI.
+    *   **Note:** The backend may prevent deletion if tickets of this type have already been sold (`quantitySold > 0`). The frontend should handle potential 400 Bad Request errors in such cases.
 
 ---
 
