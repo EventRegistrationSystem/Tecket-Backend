@@ -1,14 +1,16 @@
 # Stage 1: Build the application
-FROM node:20-alpine AS builder
+FROM node:23-alpine AS builder
 
 WORKDIR /usr/src/app
 
-# Install dependencies
-# Copy package.json and package-lock.json (or yarn.lock or pnpm-lock.yaml)
-COPY package*.json ./
+# Copy package.json and package-lock.json
+COPY package*.json ./ 
 
-# Install production dependencies
-RUN npm ci --only=production
+# # Install production dependencies
+# RUN npm ci --only=production
+
+# Install all dependencies (including dev dependencies)
+RUN npm ci
 
 # Copy prisma schema and generate client
 COPY prisma ./prisma/
@@ -20,8 +22,11 @@ COPY . .
 # Build the TypeScript application
 RUN npm run build
 
+# 3. Prune devDependencies to keep the final image smaller RUN npm prune --production
+RUN npm prune --production
+
 # Stage 2: Production image
-FROM node:20-alpine
+FROM node:23-alpine
 
 WORKDIR /usr/src/app
 
