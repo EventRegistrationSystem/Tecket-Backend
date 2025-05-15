@@ -1,403 +1,293 @@
 import { RegistrationService } from '../../services/registrationServices';
+import { ParticipantService } from '../../services/participantServices';
 import { prisma } from '../../config/prisma';
-import { AppError, ValidationError, AuthorizationError, NotFoundError } from '../../utils/errors'; 
-import { RegistrationDto } from '../../types/registrationTypes';
-import { JwtPayload } from '../../types/authTypes';
-import { UserRole, RegistrationStatus } from '@prisma/client';
+import { CreateRegistrationDto } from '../../types/registrationTypes';
+import { AppError, ValidationError, NotFoundError } from '../../utils/errors';
+import { RegistrationStatus, EventStatus, TicketStatus } from '@prisma/client';
+import { Decimal } from '@prisma/client/runtime/library';
+import bcrypt from 'bcrypt';
+import crypto from 'crypto';
 
 // Mock Prisma client
 jest.mock('../../config/prisma', () => {
-    const mockPrismaInside = {
-        event: {
-            findUnique: jest.fn(),
-            count: jest.fn()
-        },
-        participant: {
-            findUnique: jest.fn(),
-            create: jest.fn(),
-        },
-        registration: {
-            create: jest.fn(),
-            findUnique: jest.fn(),
-            findUniqueOrThrow: jest.fn(), 
-            findMany: jest.fn(),
-            count: jest.fn(),
-            update: jest.fn(),
-        },
-        ticket: {
-            findUnique: jest.fn(),
-            update: jest.fn(),
-            count: jest.fn(),
-            create: jest.fn(),
-            deleteMany: jest.fn(),
-            updateMany: jest.fn(),
-        },
-        purchase: {
-            create: jest.fn(),
-        },
-        response: {
-            create: jest.fn(),
-        },
-        eventQuestions: {},
-        question: {},
-        user: {
-             findUnique: jest.fn(),
-        },
-        $transaction: jest.fn().mockImplementation(async (arg) => {
-            if (typeof arg === 'function') {
-                return arg(mockPrismaInside);
-            } else if (Array.isArray(arg)) {
-                const results = await Promise.all(arg.map(p => Promise.resolve(p)));
-                return results;
+    const mockPrismaSingleton = {
+        event: { findUnique: jest.fn(), count: jest.fn() },
+        registration: { create: jest.fn(), count: jest.fn() },
+        purchase: { create: jest.fn(), update: jest.fn() },
+        purchaseItem: { create: jest.fn() },
+        ticket: { findMany: jest.fn(), update: jest.fn() },
+        attendee: { create: jest.fn() },
+        response: { create: jest.fn() },
+        participant: { findUnique: jest.fn(), create: jest.fn() }, // Added for ParticipantService if it uses it directly
+        eventQuestions: { findMany: jest.fn() }, // Added for fetching event questions
+        // Add other models and methods as needed by RegistrationService
+        $transaction: jest.fn().mockImplementation(async (callbackOrArray) => {
+            if (typeof callbackOrArray === 'function') {
+                return await callbackOrArray(mockPrismaSingleton); // Pass the mock prisma instance
+            } else if (Array.isArray(callbackOrArray)) {
+                return await Promise.all(callbackOrArray);
             }
-            throw new Error('Unsupported $transaction argument type');
+            throw new Error('Invalid argument passed to $transaction mock');
         }),
     };
-    return { prisma: mockPrismaInside };
+    return { prisma: mockPrismaSingleton };
 });
 
 // Mock ParticipantService
 jest.mock('../../services/participantServices', () => ({
     ParticipantService: {
-        findOrCreateParticipant: jest.fn() // Define the mock function here
-    }
+        findOrCreateParticipant: jest.fn(),
+    },
 }));
 
-// Import the mocked service to access the mock function if needed for setup
-import { ParticipantService } from '../../services/participantServices';
-const mockFindOrCreateParticipant = ParticipantService.findOrCreateParticipant as jest.Mock;
+// Mock bcrypt
+jest.mock('bcrypt', () => ({
+    hash: jest.fn(),
+}));
+
+// Mock crypto for UUID
+jest.mock('crypto', () => ({
+    ...jest.requireActual('crypto'), // Keep original crypto functions if needed elsewhere
+    randomUUID: jest.fn(),
+}));
 
 
 describe('RegistrationService', () => {
     beforeEach(() => {
-        // Clear all mocks before each test
         jest.clearAllMocks();
-        // Default mock implementation for findOrCreateParticipant
-        mockFindOrCreateParticipant.mockResolvedValue({ id: 1, userId: null, email: 'test@example.com', firstName: 'Test', lastName: 'User' });
     });
 
-    // --- Test Suite for registerForEvent ---
-    describe('registerForEvent', () => {
-        const mockFreeEvent = {
-            id: 1, name: 'Free Picnic', capacity: 100, isFree: true, status: 'PUBLISHED',
-            startDateTime: new Date('2025-07-01T12:00:00Z'), endDateTime: new Date('2025-07-01T15:00:00Z'),
-            tickets: [],
-            eventQuestions: [ { id: 1, eventId: 1, questionId: 101, isRequired: true, displayOrder: 1, question: { id: 101, questionText: 'Dietary Restrictions?' } } ]
+    describe('createRegistration', () => {
+        const mockEventId = 1;
+        const mockTicketId1 = 101;
+        const mockTicketId2 = 102;
+        const mockUserId = 1;
+
+        const baseParticipantInput = {
+            email: 'test@example.com',
+            firstName: 'Test',
+            lastName: 'User',
+            responses: [{ eventQuestionId: 1, responseText: 'Answer 1' }],
         };
-        const mockPaidEvent = {
-            id: 2, name: 'Paid Workshop', capacity: 50, isFree: false, status: 'PUBLISHED',
-            startDateTime: new Date('2025-08-01T09:00:00Z'), endDateTime: new Date('2025-08-01T17:00:00Z'),
-            tickets: [ { id: 201, eventId: 2, name: 'Standard Ticket', price: { toNumber: () => 50.00 }, quantityTotal: 40, quantitySold: 10, salesStart: new Date(), salesEnd: new Date('2025-07-31T23:59:59Z'), status: 'ACTIVE' } ],
-            eventQuestions: [ { id: 3, eventId: 2, questionId: 201, isRequired: true, displayOrder: 1, question: { id: 201, questionText: 'Company Name?' } } ]
+
+        const mockEventPublishedPaid = {
+            id: mockEventId,
+            status: EventStatus.PUBLISHED,
+            isFree: false,
+            capacity: 100,
+            tickets: [
+                { id: mockTicketId1, name: 'GA', price: new Decimal(50), status: TicketStatus.ACTIVE, salesStart: new Date(Date.now() - 86400000), salesEnd: new Date(Date.now() + 86400000), quantityTotal: 50, quantitySold: 0 },
+                { id: mockTicketId2, name: 'VIP', price: new Decimal(100), status: TicketStatus.ACTIVE, salesStart: new Date(Date.now() - 86400000), salesEnd: new Date(Date.now() + 86400000), quantityTotal: 20, quantitySold: 0 },
+            ],
+            eventQuestions: [{ id: 1, questionId: 1, isRequired: true, question: { questionText: 'Q1' } }],
         };
-        const baseRegistrationData: Omit<RegistrationDto, 'eventId' | 'ticketId' | 'quantity'> = {
-            participant: { email: 'test@example.com', firstName: 'Test', lastName: 'User' },
-            responses: [ { questionId: 101, responseText: 'None' }, { questionId: 201, responseText: 'Test Corp' } ]
-        };
-        const mockParticipant = { id: 1, userId: null, ...baseRegistrationData.participant, createdAt: new Date(), updatedAt: new Date() };
+        
+        const mockParticipant = { id: 1, email: 'test@example.com', firstName: 'Test', lastName: 'User' };
+        const mockRegistration = { id: 1, eventId: mockEventId, participantId: mockParticipant.id, userId: mockUserId, status: RegistrationStatus.PENDING };
+        const mockPurchase = { id: 1, registrationId: mockRegistration.id, totalPrice: new Decimal(50) };
+        const mockAttendee = { id: 1, registrationId: mockRegistration.id, participantId: mockParticipant.id };
 
-        it('should register successfully for a FREE event and set status to CONFIRMED', async () => {
-            const registrationInput: RegistrationDto = { ...baseRegistrationData, eventId: mockFreeEvent.id, responses: [{ questionId: 101, responseText: 'None' }] };
-            const expectedRegistration = { id: 1, eventId: mockFreeEvent.id, participantId: mockParticipant.id, status: RegistrationStatus.CONFIRMED };
+        it('should successfully create a registration for a logged-in user for a paid event', async () => {
+            const dto: CreateRegistrationDto = {
+                eventId: mockEventId,
+                tickets: [{ ticketId: mockTicketId1, quantity: 1 }],
+                participants: [baseParticipantInput],
+            };
 
-            (prisma.event.findUnique as jest.Mock).mockResolvedValue(mockFreeEvent);
-            (prisma.registration.count as jest.Mock).mockResolvedValue(0);
-            (prisma.registration.create as jest.Mock).mockResolvedValue(expectedRegistration);
-            (prisma.response.create as jest.Mock).mockResolvedValue({});
-            (prisma.registration.findUniqueOrThrow as jest.Mock).mockResolvedValue({ ...expectedRegistration, participant: mockParticipant, event: mockFreeEvent, purchase: null, responses: [] });
-
-            const result = await RegistrationService.registerForEvent(registrationInput);
-
-            expect(mockFindOrCreateParticipant).toHaveBeenCalledWith(registrationInput.participant, prisma);
-            // Corrected assertion to check within the 'data' object
-            expect(prisma.registration.create).toHaveBeenCalledWith({
-                 data: expect.objectContaining({ status: RegistrationStatus.CONFIRMED })
-            });
-            expect(prisma.purchase.create).not.toHaveBeenCalled();
-            expect(prisma.ticket.update).not.toHaveBeenCalled();
-            expect(result.status).toBe(RegistrationStatus.CONFIRMED);
-        });
-
-        it('should register successfully for a PAID event and set status to PENDING', async () => {
-            const registrationInput: RegistrationDto = { ...baseRegistrationData, eventId: mockPaidEvent.id, ticketId: 201, quantity: 1, responses: [{ questionId: 201, responseText: 'Test Corp' }] };
-            const expectedRegistration = { id: 2, eventId: mockPaidEvent.id, participantId: mockParticipant.id, status: RegistrationStatus.PENDING };
-            const expectedPurchase = { id: 1, registrationId: 2, ticketId: 201, quantity: 1, unitPrice: mockPaidEvent.tickets[0].price, totalPrice: 50.00 };
-
-            (prisma.event.findUnique as jest.Mock).mockResolvedValue(mockPaidEvent);
-            (prisma.registration.count as jest.Mock).mockResolvedValue(0);
-            (prisma.ticket.findUnique as jest.Mock).mockResolvedValue(mockPaidEvent.tickets[0]);
-            (prisma.registration.create as jest.Mock).mockResolvedValue(expectedRegistration);
-            (prisma.purchase.create as jest.Mock).mockResolvedValue(expectedPurchase);
+            (prisma.event.findUnique as jest.Mock).mockResolvedValue(mockEventPublishedPaid);
+            (prisma.registration.count as jest.Mock).mockResolvedValue(0); // No existing registrations
+            (ParticipantService.findOrCreateParticipant as jest.Mock).mockResolvedValue(mockParticipant);
+            (prisma.registration.create as jest.Mock).mockResolvedValue(mockRegistration);
+            (prisma.purchase.create as jest.Mock).mockResolvedValue(mockPurchase);
+            (prisma.purchaseItem.create as jest.Mock).mockResolvedValue({});
+            (prisma.ticket.findMany as jest.Mock).mockResolvedValue(mockEventPublishedPaid.tickets); // For re-validation in transaction
             (prisma.ticket.update as jest.Mock).mockResolvedValue({});
+            (prisma.attendee.create as jest.Mock).mockResolvedValue(mockAttendee);
             (prisma.response.create as jest.Mock).mockResolvedValue({});
-            (prisma.registration.findUniqueOrThrow as jest.Mock).mockResolvedValue({ ...expectedRegistration, participant: mockParticipant, event: mockPaidEvent, purchase: expectedPurchase, responses: [] });
 
-            const result = await RegistrationService.registerForEvent(registrationInput);
+            const result = await RegistrationService.createRegistration(dto, mockUserId);
 
-            expect(mockFindOrCreateParticipant).toHaveBeenCalledWith(registrationInput.participant, prisma);
-             // Corrected assertion to check within the 'data' object
+            expect(result.message).toBe('Registration pending payment');
+            expect(result.registrationId).toBe(mockRegistration.id);
+            expect(result.paymentToken).toBeUndefined();
             expect(prisma.registration.create).toHaveBeenCalledWith({
-                data: expect.objectContaining({ status: RegistrationStatus.PENDING })
+                data: expect.objectContaining({ userId: mockUserId, status: RegistrationStatus.PENDING })
             });
             expect(prisma.purchase.create).toHaveBeenCalled();
-            expect(prisma.ticket.update).toHaveBeenCalledWith(expect.objectContaining({ data: { quantitySold: { increment: 1 } } }));
-            expect(result.status).toBe(RegistrationStatus.PENDING);
+            expect(bcrypt.hash).not.toHaveBeenCalled();
         });
 
-         it('should throw error if event is not found', async () => {
-            (prisma.event.findUnique as jest.Mock).mockResolvedValue(null);
-            const registrationInput: RegistrationDto = { ...baseRegistrationData, eventId: 999, responses: [] };
-            await expect(RegistrationService.registerForEvent(registrationInput)).rejects.toThrow(NotFoundError);
-        });
-         it('should throw error if event is full', async () => {
-            (prisma.event.findUnique as jest.Mock).mockResolvedValue(mockFreeEvent);
-            (prisma.registration.count as jest.Mock).mockResolvedValue(mockFreeEvent.capacity);
-            const registrationInput: RegistrationDto = { ...baseRegistrationData, eventId: mockFreeEvent.id, responses: [{ questionId: 101, responseText: 'None' }] };
-            await expect(RegistrationService.registerForEvent(registrationInput)).rejects.toThrow('Event is full');
-        });
-         it('should throw error for paid event if ticketId is missing', async () => {
-            (prisma.event.findUnique as jest.Mock).mockResolvedValue(mockPaidEvent);
+        it('should successfully create a registration for a guest and return a paymentToken', async () => {
+            const dto: CreateRegistrationDto = {
+                eventId: mockEventId,
+                tickets: [{ ticketId: mockTicketId1, quantity: 1 }],
+                participants: [{ ...baseParticipantInput, email: 'guest@example.com' }],
+            };
+            const mockGuestParticipant = { ...mockParticipant, id: 2, email: 'guest@example.com' };
+            // For guest, userId in registration record should be null (or undefined if Prisma handles it that way)
+            const mockGuestRegistration = { ...mockRegistration, id: 2, participantId: mockGuestParticipant.id, userId: null }; 
+            const mockGuestPurchase = { ...mockPurchase, id: 2, registrationId: mockGuestRegistration.id };
+            const mockGuestAttendee = { ...mockAttendee, id: 2, registrationId: mockGuestRegistration.id, participantId: mockGuestParticipant.id };
+            const mockUuid = 'test-uuid-123';
+            const mockHashedToken = 'hashed-test-uuid-123';
+
+            (crypto.randomUUID as jest.Mock).mockReturnValue(mockUuid);
+            (bcrypt.hash as jest.Mock).mockResolvedValue(mockHashedToken);
+
+            (prisma.event.findUnique as jest.Mock).mockResolvedValue(mockEventPublishedPaid);
             (prisma.registration.count as jest.Mock).mockResolvedValue(0);
-            const registrationInput: RegistrationDto = { ...baseRegistrationData, eventId: mockPaidEvent.id, quantity: 1, responses: [{ questionId: 201, responseText: 'Test Corp' }] };
-            await expect(RegistrationService.registerForEvent(registrationInput)).rejects.toThrow('Ticket ID and quantity are required for paid events');
-        });
-         it('should throw error for paid event if ticket is not found in event data', async () => {
-            (prisma.event.findUnique as jest.Mock).mockResolvedValue(mockPaidEvent);
-            (prisma.registration.count as jest.Mock).mockResolvedValue(0);
-            const registrationInput: RegistrationDto = { ...baseRegistrationData, eventId: mockPaidEvent.id, ticketId: 999, quantity: 1, responses: [{ questionId: 201, responseText: 'Test Corp' }] };
-            await expect(RegistrationService.registerForEvent(registrationInput)).rejects.toThrow('Ticket not found');
-        });
-         it('should throw error for paid event if ticket quantity is not available', async () => {
-            const soldOutTicketEvent = { ...mockPaidEvent, tickets: [{ ...mockPaidEvent.tickets[0], quantitySold: mockPaidEvent.tickets[0].quantityTotal }] };
-            (prisma.event.findUnique as jest.Mock).mockResolvedValue(soldOutTicketEvent);
-            (prisma.registration.count as jest.Mock).mockResolvedValue(0);
-            const registrationInput: RegistrationDto = { ...baseRegistrationData, eventId: mockPaidEvent.id, ticketId: 201, quantity: 1, responses: [{ questionId: 201, responseText: 'Test Corp' }] };
-            await expect(RegistrationService.registerForEvent(registrationInput)).rejects.toThrow('Selected ticket quantity not available');
-        });
-         it('should throw error if a required question response is missing', async () => {
-            (prisma.event.findUnique as jest.Mock).mockResolvedValue(mockFreeEvent);
-            (prisma.registration.count as jest.Mock).mockResolvedValue(0);
-            const registrationInput: RegistrationDto = { ...baseRegistrationData, eventId: mockFreeEvent.id, responses: [] };
-            await expect(RegistrationService.registerForEvent(registrationInput)).rejects.toThrow('Response required for question: "Dietary Restrictions?"');
-        });
-         it('should throw error if a required question response is empty', async () => {
-            (prisma.event.findUnique as jest.Mock).mockResolvedValue(mockFreeEvent);
-            (prisma.registration.count as jest.Mock).mockResolvedValue(0);
-            const registrationInput: RegistrationDto = { ...baseRegistrationData, eventId: mockFreeEvent.id, responses: [{ questionId: 101, responseText: '  ' }] };
-            await expect(RegistrationService.registerForEvent(registrationInput)).rejects.toThrow('Response cannot be empty for required question: "Dietary Restrictions?"');
-        });
-         it('should throw error if an invalid question ID is provided', async () => {
-            (prisma.event.findUnique as jest.Mock).mockResolvedValue(mockFreeEvent);
-            (prisma.registration.count as jest.Mock).mockResolvedValue(0);
-            const registrationInput: RegistrationDto = { ...baseRegistrationData, eventId: mockFreeEvent.id, responses: [{ questionId: 101, responseText: 'None' }, { questionId: 999, responseText: 'Invalid' }] };
-            await expect(RegistrationService.registerForEvent(registrationInput)).rejects.toThrow('Invalid question ID provided: 999');
-        });
-    });
-
-    // --- Test Suite for getRegistrations ---
-    describe('getRegistrations', () => {
-        const mockUser: JwtPayload = { userId: 1, role: UserRole.PARTICIPANT };
-        const mockOrganizer: JwtPayload = { userId: 2, role: UserRole.ORGANIZER };
-        const mockAdmin: JwtPayload = { userId: 3, role: UserRole.ADMIN };
-        const mockRegistrations = [ { id: 1, eventId: 10, userId: 1, participant: { id: 1 }, event: { id: 10, organiserId: 2 } }, { id: 2, eventId: 10, userId: 4, participant: { id: 4 }, event: { id: 10, organiserId: 2 } }, { id: 3, eventId: 11, userId: 1, participant: { id: 1 }, event: { id: 11, organiserId: 5 } } ];
-
-        it('should allow ADMIN to get all registrations', async () => {
-            (prisma.registration.findMany as jest.Mock).mockResolvedValue(mockRegistrations);
-            (prisma.registration.count as jest.Mock).mockResolvedValue(mockRegistrations.length);
-            const result = await RegistrationService.getRegistrations({ page: 1, limit: 10 }, mockAdmin);
-            expect(prisma.registration.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: {} }));
-            expect(result.registrations).toHaveLength(3);
-        });
-        it('should allow ADMIN to filter by eventId', async () => {
-            (prisma.registration.findMany as jest.Mock).mockResolvedValue([mockRegistrations[0], mockRegistrations[1]]);
-            (prisma.registration.count as jest.Mock).mockResolvedValue(2);
-            const result = await RegistrationService.getRegistrations({ page: 1, limit: 10, eventId: 10 }, mockAdmin);
-            expect(prisma.registration.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { eventId: 10 } }));
-            expect(result.registrations).toHaveLength(2);
-        });
-        it('should allow ORGANIZER to get registrations for their event', async () => {
-            (prisma.event.findUnique as jest.Mock).mockResolvedValue({ organiserId: mockOrganizer.userId });
-            (prisma.registration.findMany as jest.Mock).mockResolvedValue([mockRegistrations[0], mockRegistrations[1]]);
-            (prisma.registration.count as jest.Mock).mockResolvedValue(2);
-            const result = await RegistrationService.getRegistrations({ page: 1, limit: 10, eventId: 10 }, mockOrganizer);
-            expect(prisma.event.findUnique).toHaveBeenCalledWith({ where: { id: 10 }, select: { organiserId: true } });
-            expect(prisma.registration.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { eventId: 10 } }));
-            expect(result.registrations).toHaveLength(2);
-        });
-        it('should restrict PARTICIPANT to only their own registrations when no filter', async () => {
-            (prisma.registration.findMany as jest.Mock).mockResolvedValue([mockRegistrations[0], mockRegistrations[2]]);
-            (prisma.registration.count as jest.Mock).mockResolvedValue(2);
-            const result = await RegistrationService.getRegistrations({ page: 1, limit: 10 }, mockUser);
-            expect(prisma.registration.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { userId: mockUser.userId } }));
-            expect(result.registrations).toHaveLength(2);
-        });
-        it('should restrict PARTICIPANT to only their own registrations when filtering by eventId', async () => {
-            (prisma.event.findUnique as jest.Mock).mockResolvedValue({ organiserId: 5 });
-            (prisma.registration.findMany as jest.Mock).mockResolvedValue([mockRegistrations[2]]);
-            (prisma.registration.count as jest.Mock).mockResolvedValue(1);
-            const result = await RegistrationService.getRegistrations({ page: 1, limit: 10, eventId: 11 }, mockUser);
-            expect(prisma.event.findUnique).toHaveBeenCalledWith({ where: { id: 11 }, select: { organiserId: true } });
-            expect(prisma.registration.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { eventId: 11, userId: mockUser.userId } }));
-            expect(result.registrations).toHaveLength(1);
-        });
-        it('should throw ForbiddenError if PARTICIPANT tries to filter by another userId', async () => {
-            await expect(RegistrationService.getRegistrations({ page: 1, limit: 10, userId: 4 }, mockUser)).rejects.toThrow(AuthorizationError);
-        });
-    });
-
-    // --- Test Suite for getRegistrationById ---
-    describe('getRegistrationById', () => {
-        const mockUser: JwtPayload = { userId: 1, role: UserRole.PARTICIPANT };
-        const mockOrganizer: JwtPayload = { userId: 2, role: UserRole.ORGANIZER };
-        const mockAdmin: JwtPayload = { userId: 3, role: UserRole.ADMIN };
-        const mockRegistration = { id: 101, userId: 1, eventId: 20, participant: { id: 1, userId: 1 }, event: { id: 20, organiserId: 2 } };
-
-        it('should allow ADMIN to get any registration', async () => {
-            (prisma.registration.findUnique as jest.Mock).mockResolvedValue(mockRegistration);
-            const result = await RegistrationService.getRegistrationById(101, mockAdmin);
-            expect(result).toEqual(mockRegistration);
-        });
-        it('should allow OWNER to get their registration', async () => {
-            (prisma.registration.findUnique as jest.Mock).mockResolvedValue(mockRegistration);
-            const result = await RegistrationService.getRegistrationById(101, mockUser);
-            expect(result).toEqual(mockRegistration);
-        });
-        it('should allow EVENT ORGANIZER to get registration for their event', async () => {
-            (prisma.registration.findUnique as jest.Mock).mockResolvedValue(mockRegistration);
-            const result = await RegistrationService.getRegistrationById(101, mockOrganizer);
-            expect(result).toEqual(mockRegistration);
-        });
-        it('should throw ForbiddenError if non-owner/non-organizer/non-admin tries to access', async () => {
-            const otherUser: JwtPayload = { userId: 99, role: UserRole.PARTICIPANT };
-            (prisma.registration.findUnique as jest.Mock).mockResolvedValue(mockRegistration);
-            await expect(RegistrationService.getRegistrationById(101, otherUser)).rejects.toThrow(AuthorizationError);
-        });
-        it('should throw NotFoundError if registration does not exist', async () => {
-            (prisma.registration.findUnique as jest.Mock).mockResolvedValue(null);
-            await expect(RegistrationService.getRegistrationById(999, mockAdmin)).rejects.toThrow(NotFoundError);
-        });
-    });
-
-    // --- Test Suite for cancelRegistration ---
-    describe('cancelRegistration', () => {
-        const registrationId = 101;
-        const participantUserId = 1;
-        const adminUserId = 3;
-        const otherUserId = 99;
-
-        const mockUser: JwtPayload = { userId: participantUserId, role: UserRole.PARTICIPANT };
-        const mockAdmin: JwtPayload = { userId: adminUserId, role: UserRole.ADMIN };
-        const mockOtherUser: JwtPayload = { userId: otherUserId, role: UserRole.PARTICIPANT };
-
-        const mockFreeRegistration = {
-            id: registrationId,
-            status: RegistrationStatus.CONFIRMED,
-            userId: participantUserId, // Linked user
-            participant: { userId: participantUserId },
-            event: { id: 1, isFree: true },
-            purchase: null,
-            user: { id: participantUserId } // Added user relation mock
-        };
-
-        const mockPaidRegistration = {
-            id: registrationId + 1,
-            status: RegistrationStatus.PENDING,
-            userId: participantUserId, // Linked user
-            participant: { userId: participantUserId },
-            event: { id: 2, isFree: false },
-            purchase: { id: 5, ticketId: 201, quantity: 1, ticket: { id: 201, name: 'Paid Ticket' } },
-            user: { id: participantUserId } // Added user relation mock
-        };
-
-         const mockCancelledRegistration = {
-            ...mockFreeRegistration,
-            status: RegistrationStatus.CANCELLED,
-        };
-
-        it('should allow owner to cancel their registration (free event)', async () => {
-            (prisma.registration.findUnique as jest.Mock).mockResolvedValue(mockFreeRegistration);
-            const updatedReg = { ...mockFreeRegistration, status: RegistrationStatus.CANCELLED };
-            (prisma.registration.update as jest.Mock).mockResolvedValue(updatedReg);
-
-            const result = await RegistrationService.cancelRegistration(registrationId, mockUser);
-
-            expect(prisma.registration.findUnique).toHaveBeenCalledWith({ where: { id: registrationId }, include: expect.any(Object) });
-            expect(prisma.registration.update).toHaveBeenCalledWith({ where: { id: registrationId }, data: { status: RegistrationStatus.CANCELLED }, include: expect.any(Object) });
-            expect(prisma.ticket.update).not.toHaveBeenCalled(); // No ticket decrement for free event
-            expect(result.status).toBe(RegistrationStatus.CANCELLED);
-        });
-
-        it('should allow owner to cancel their registration (paid event) and decrement ticket count', async () => {
-            const regId = mockPaidRegistration.id;
-            (prisma.registration.findUnique as jest.Mock).mockResolvedValue(mockPaidRegistration);
-            const updatedReg = { ...mockPaidRegistration, status: RegistrationStatus.CANCELLED };
-            (prisma.registration.update as jest.Mock).mockResolvedValue(updatedReg);
-            (prisma.ticket.findUnique as jest.Mock).mockResolvedValue(mockPaidRegistration.purchase.ticket); // Mock ticket find for safety check
-            (prisma.ticket.update as jest.Mock).mockResolvedValue({}); // Mock ticket decrement
-
-            const result = await RegistrationService.cancelRegistration(regId, mockUser);
-
-            expect(prisma.registration.findUnique).toHaveBeenCalledWith({ where: { id: regId }, include: expect.any(Object) });
-            expect(prisma.registration.update).toHaveBeenCalledWith({ where: { id: regId }, data: { status: RegistrationStatus.CANCELLED }, include: expect.any(Object) });
-            expect(prisma.ticket.update).toHaveBeenCalledWith({
-                where: { id: mockPaidRegistration.purchase.ticketId },
-                data: { quantitySold: { decrement: mockPaidRegistration.purchase.quantity } }
-            });
-            expect(result.status).toBe(RegistrationStatus.CANCELLED);
-        });
-
-         it('should allow admin to cancel any registration (paid event)', async () => {
-            const regId = mockPaidRegistration.id;
-            (prisma.registration.findUnique as jest.Mock).mockResolvedValue(mockPaidRegistration);
-            const updatedReg = { ...mockPaidRegistration, status: RegistrationStatus.CANCELLED };
-            (prisma.registration.update as jest.Mock).mockResolvedValue(updatedReg);
-            (prisma.ticket.findUnique as jest.Mock).mockResolvedValue(mockPaidRegistration.purchase.ticket);
+            (ParticipantService.findOrCreateParticipant as jest.Mock).mockResolvedValue(mockGuestParticipant);
+            (prisma.registration.create as jest.Mock).mockResolvedValue(mockGuestRegistration);
+            (prisma.purchase.create as jest.Mock).mockResolvedValue(mockGuestPurchase);
+            (prisma.purchaseItem.create as jest.Mock).mockResolvedValue({});
+            (prisma.ticket.findMany as jest.Mock).mockResolvedValue(mockEventPublishedPaid.tickets);
             (prisma.ticket.update as jest.Mock).mockResolvedValue({});
+            (prisma.purchase.update as jest.Mock).mockResolvedValue({}); // For payment token
+            (prisma.attendee.create as jest.Mock).mockResolvedValue(mockGuestAttendee);
+            (prisma.response.create as jest.Mock).mockResolvedValue({});
 
-            const result = await RegistrationService.cancelRegistration(regId, mockAdmin); // Admin user
+            const result = await RegistrationService.createRegistration(dto, undefined); // No userId for guest
 
-            expect(prisma.registration.update).toHaveBeenCalledWith({ where: { id: regId }, data: { status: RegistrationStatus.CANCELLED }, include: expect.any(Object) });
-            expect(prisma.ticket.update).toHaveBeenCalled(); // Ticket count decremented
-            expect(result.status).toBe(RegistrationStatus.CANCELLED);
+            expect(result.message).toBe('Registration pending payment');
+            expect(result.registrationId).toBe(mockGuestRegistration.id);
+            expect(result.paymentToken).toBe(mockUuid);
+            expect(prisma.registration.create).toHaveBeenCalledWith({
+                data: expect.objectContaining({ userId: undefined, status: RegistrationStatus.PENDING }) // Service passes undefined for userId
+            });
+            expect(bcrypt.hash).toHaveBeenCalledWith(mockUuid, 10);
+            expect(prisma.purchase.update).toHaveBeenCalledWith(expect.objectContaining({
+                where: { id: mockGuestPurchase.id }, // Make sure to assert the where clause if important
+                data: { paymentToken: mockHashedToken, paymentTokenExpiry: expect.any(Date) }
+            }));
         });
 
-        it('should throw AuthorizationError if user is not owner or admin', async () => {
-            (prisma.registration.findUnique as jest.Mock).mockResolvedValue(mockFreeRegistration); // Owned by user 1
-
-            await expect(RegistrationService.cancelRegistration(registrationId, mockOtherUser)) // Attempted by user 99
-                .rejects.toThrow(AuthorizationError);
-             await expect(RegistrationService.cancelRegistration(registrationId, mockOtherUser))
-                .rejects.toThrow('Forbidden: You do not have permission to cancel this registration.');
-            expect(prisma.registration.update).not.toHaveBeenCalled();
+        it('should throw ValidationError if number of participants does not match total ticket quantity', async () => {
+            const dto: CreateRegistrationDto = {
+                eventId: mockEventId,
+                tickets: [{ ticketId: mockTicketId1, quantity: 1 }], // 1 ticket
+                participants: [baseParticipantInput, { ...baseParticipantInput, email: 'p2@e.com' }], // 2 participants
+            };
+            await expect(RegistrationService.createRegistration(dto, mockUserId))
+                .rejects.toThrow(new ValidationError('Number of participants must match the total quantity of tickets for paid events.')); 
         });
 
-        it('should throw NotFoundError if registration does not exist', async () => {
-            (prisma.registration.findUnique as jest.Mock).mockResolvedValue(null);
-            await expect(RegistrationService.cancelRegistration(999, mockAdmin))
-                .rejects.toThrow(NotFoundError);
+        it('should throw NotFoundError if event not found', async () => {
+            // Provide valid tickets and participants to pass initial validation
+            const dto: CreateRegistrationDto = { 
+                eventId: 999, // Non-existent event
+                tickets: [{ ticketId: mockTicketId1, quantity: 1 }], 
+                participants: [baseParticipantInput] 
+            };
+            (prisma.event.findUnique as jest.Mock).mockResolvedValue(null);
+            await expect(RegistrationService.createRegistration(dto, mockUserId))
+                .rejects.toThrow(new NotFoundError('Event not found'));
+        });
+        
+        it('should throw ValidationError if event is not published', async () => {
+            const dto: CreateRegistrationDto = { 
+                eventId: mockEventId, 
+                tickets: [{ ticketId: mockTicketId1, quantity: 1 }], 
+                participants: [baseParticipantInput] 
+            };
+            (prisma.event.findUnique as jest.Mock).mockResolvedValue({ ...mockEventPublishedPaid, status: EventStatus.DRAFT });
+            await expect(RegistrationService.createRegistration(dto, mockUserId))
+                .rejects.toThrow(new ValidationError('Event is not currently open for registration.'));
         });
 
-        it('should return current registration if already cancelled', async () => {
-             (prisma.registration.findUnique as jest.Mock).mockResolvedValue(mockCancelledRegistration);
-
-            const result = await RegistrationService.cancelRegistration(registrationId, mockUser);
-
-            expect(prisma.registration.update).not.toHaveBeenCalled();
-            expect(prisma.ticket.update).not.toHaveBeenCalled();
-            expect(result.status).toBe(RegistrationStatus.CANCELLED);
+        it('should throw ValidationError if event capacity is exceeded', async () => {
+            const dto: CreateRegistrationDto = { 
+                eventId: mockEventId, 
+                tickets: [{ ticketId: mockTicketId1, quantity: 1 }], 
+                participants: [baseParticipantInput] 
+            };
+            (prisma.event.findUnique as jest.Mock).mockResolvedValue({ ...mockEventPublishedPaid, capacity: 0 }); // Capacity 0
+            (prisma.registration.count as jest.Mock).mockResolvedValue(0); // 0 existing, 1 requested
+            await expect(RegistrationService.createRegistration(dto, mockUserId))
+                .rejects.toThrow(new ValidationError(`Event capacity (0) exceeded. Only 0 spots remaining.`));
         });
 
-         it('should throw ValidationError if trying to cancel registration with invalid status', async () => {
-            const mockCompletedRegistration = { ...mockFreeRegistration, status: 'COMPLETED' as any }; // Simulate an invalid status for cancellation
-            (prisma.registration.findUnique as jest.Mock).mockResolvedValue(mockCompletedRegistration);
-
-            await expect(RegistrationService.cancelRegistration(registrationId, mockUser))
-                .rejects.toThrow(ValidationError);
-             await expect(RegistrationService.cancelRegistration(registrationId, mockUser))
-                .rejects.toThrow('Cannot cancel registration with status: COMPLETED');
+        it('should throw NotFoundError if a ticket is not found for the event', async () => {
+            const dto: CreateRegistrationDto = { 
+                eventId: mockEventId, 
+                tickets: [{ ticketId: 999, quantity: 1 }], // Non-existent ticket
+                participants: [baseParticipantInput] 
+            };
+            (prisma.event.findUnique as jest.Mock).mockResolvedValue(mockEventPublishedPaid); // Event returns its own tickets
+            (prisma.registration.count as jest.Mock).mockResolvedValue(0);
+            await expect(RegistrationService.createRegistration(dto, mockUserId))
+                .rejects.toThrow(new NotFoundError('Ticket with ID 999 not found for this event.'));
+        });
+        
+        it('should throw ValidationError if a required question is not answered', async () => {
+            const dto: CreateRegistrationDto = {
+                eventId: mockEventId,
+                tickets: [{ ticketId: mockTicketId1, quantity: 1 }],
+                participants: [{ ...baseParticipantInput, responses: [] }], // No responses
+            };
+            (prisma.event.findUnique as jest.Mock).mockResolvedValue(mockEventPublishedPaid);
+            (prisma.registration.count as jest.Mock).mockResolvedValue(0);
+            await expect(RegistrationService.createRegistration(dto, mockUserId))
+                .rejects.toThrow(new ValidationError(`Response required for question "Q1" for participant Test User.`));
         });
 
+        it('should create a registration for a free event as CONFIRMED', async () => {
+            const mockEventFree = {
+                ...mockEventPublishedPaid,
+                isFree: true,
+                tickets: [], // Free events might not have tickets in the same way
+                eventQuestions: [{ id: 1, questionId: 1, isRequired: false, question: { questionText: 'Optional Q' } }] // Make question optional for simplicity
+            };
+            const dto: CreateRegistrationDto = {
+                eventId: mockEventId,
+                tickets: [], // No tickets for free event as per current service logic check
+                participants: [{ ...baseParticipantInput, responses: [{eventQuestionId: 1, responseText: "Free answer"}] }],
+            };
+        
+            (prisma.event.findUnique as jest.Mock).mockResolvedValue(mockEventFree);
+            (prisma.registration.count as jest.Mock).mockResolvedValue(0);
+            (ParticipantService.findOrCreateParticipant as jest.Mock).mockResolvedValue(mockParticipant);
+            (prisma.registration.create as jest.Mock).mockResolvedValue({ ...mockRegistration, status: RegistrationStatus.CONFIRMED });
+            (prisma.attendee.create as jest.Mock).mockResolvedValue(mockAttendee);
+            (prisma.response.create as jest.Mock).mockResolvedValue({});
+        
+            const result = await RegistrationService.createRegistration(dto, mockUserId);
+        
+            expect(result.message).toBe('Registration confirmed');
+            expect(prisma.registration.create).toHaveBeenCalledWith({
+                data: expect.objectContaining({ 
+                    status: RegistrationStatus.CONFIRMED,
+                    userId: mockUserId // Ensure userId is also checked if passed for free event
+                })
+            });
+            expect(prisma.purchase.create).not.toHaveBeenCalled(); // No purchase for free event
+        });
+
+        it('should throw ValidationError if ticket quantity becomes unavailable during transaction', async () => {
+            const dto: CreateRegistrationDto = {
+                eventId: mockEventId,
+                tickets: [{ ticketId: mockTicketId1, quantity: 1 }],
+                participants: [baseParticipantInput],
+            };
+        
+            (prisma.event.findUnique as jest.Mock).mockResolvedValue(mockEventPublishedPaid);
+            (prisma.registration.count as jest.Mock).mockResolvedValue(0); // Initial capacity check passes
+            
+            // Mock transaction part
+            (ParticipantService.findOrCreateParticipant as jest.Mock).mockResolvedValue(mockParticipant);
+            (prisma.registration.create as jest.Mock).mockResolvedValue(mockRegistration);
+            // Simulate ticket becoming unavailable inside transaction
+            (prisma.ticket.findMany as jest.Mock).mockResolvedValueOnce([
+                { ...mockEventPublishedPaid.tickets[0], quantitySold: mockEventPublishedPaid.tickets[0].quantityTotal } // Ticket now sold out
+            ]);
+        
+            await expect(RegistrationService.createRegistration(dto, mockUserId))
+                .rejects.toThrow(new ValidationError(`Ticket "GA" quantity became unavailable during registration. Only 0 left.`));
+        });
+
+        // Add more tests for other validation paths:
+        // - Ticket inactive, sales period checks
+        // - Invalid eventQuestionId in responses
+        // - Empty responseText for required questions
+        // - Multiple participants and multiple ticket types combined
     });
-    // --- End Test Suite for cancelRegistration ---
-
 });

@@ -54,15 +54,16 @@ export const optionalAuthenticate = (req: Request, res: Response, next: NextFunc
             req.user = decoded;
             console.log('User authenticated:', req.user);
             next();
-        } catch (tokenError) {
+        } catch (tokenError: any) { // Catch specific error
             // Invalid token, but continue as public access
-            console.log('Token verification failed, continuing as public access');
+            console.error('Token verification failed:', tokenError.name, '-', tokenError.message); // Log specific JWT error
+            console.log('Continuing as public access due to token verification failure.');
             next();
         }
     }
-    catch (error) {
-        // Any other error, continue as public access
-        console.log('Authentication error, continuing as public access');
+    catch (error: any) { // Catch other unexpected errors during token processing
+        console.error('Unexpected authentication middleware error:', error.message);
+        console.log('Continuing as public access due to unexpected authentication error.');
         next();
     }
 }

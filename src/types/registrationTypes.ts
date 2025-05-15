@@ -1,11 +1,13 @@
 // Participant data structure expected within the registration payload
+import { PaymentStatus } from "@prisma/client";
+
 // Includes participant details and their specific answers
 export interface ParticipantInput {
     email: string;
     firstName: string;
     lastName: string;
     phoneNumber?: string;
-    dateOfBirth?: Date | string; // Allow string for input, convert in service if needed
+    dateOfBirth?: Date | string; // Allow string for input, convert in service layer
     address?: string;
     city?: string;
     state?: string;
@@ -21,8 +23,6 @@ export interface ParticipantInput {
 // Main DTO for creating a registration with multiple participants/attendees
 export interface CreateRegistrationDto {
     eventId: number;
-    userId?: number; // Optional: ID of the logged-in user initiating the registration
-    // isGuest?: boolean; // Can likely be inferred from presence/absence of userId
     tickets: Array<{
         ticketId: number; // ID of the ticket type being purchased
         quantity: number; // How many of this ticket type
@@ -36,6 +36,8 @@ export interface CreateRegistrationDto {
 export interface CreateRegistrationResponse {
     message: string;
     registrationId: number; // The ID of the created Registration record
+    paymentToken?: string; // Optional token for guest payments
+
     // Optionally include other details like total price calculated, etc.
 }
 
@@ -67,7 +69,7 @@ export interface RegistrationDetailsDto {
     purchase?: { // Details if it was a paid event
         totalPrice: number; // Prisma Decimal might need conversion
         currency?: string;
-        paymentStatus?: string; // PaymentStatus enum value
+        paymentStatus?: PaymentStatus;
     };
     // Add other relevant fields as needed
 }
