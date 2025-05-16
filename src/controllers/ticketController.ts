@@ -155,7 +155,6 @@ export class TicketController {
             }
 
             // Optional: Could add check here to ensure ticket belongs to eventId before calling service
-
             const ticket = await TicketService.getTicketById(ticketId);
 
             // Optional: Could add check here that ticket.eventId matches eventId from params

@@ -82,19 +82,32 @@ export class EventService {
 
                 // Map over the questions array
                 eventData.questions.map(async (q) => {
-                    // 3.1 - Create the question
-                    const question = await tx.question.create({
-                        data: {
-                            questionText: q.questionText,
-                            questionType: 'TEXT', // Default to text for now
-                        }
+                    let questionId: number;
+
+                    // 3.1 - Try to find an existing Question by its text
+                    const existingQuestion = await tx.question.findFirst({
+                        where: { questionText: q.questionText }
                     });
+
+                    if (existingQuestion) {
+                        questionId = existingQuestion.id;
+                    } else {
+                        // Create a new Question if it doesn't exist
+                        const newQuestion = await tx.question.create({
+                            data: {
+                                questionText: q.questionText,
+                                questionType: 'TEXT', // Default to text for now
+                                // category and validationRules could be added here if part of CreateEventDTO's question structure
+                            }
+                        });
+                        questionId = newQuestion.id;
+                    }
 
                     // 3.2 - Link the question to the event
                     return tx.eventQuestions.create({
                         data: {
                             eventId: event.id,
-                            questionId: question.id,
+                            questionId: questionId,
                             isRequired: q.isRequired,
                             displayOrder: q.displayOrder
                         }
@@ -360,7 +373,7 @@ export class EventService {
 
         // Update the event
         return prisma.$transaction(async (tx) => {
-            // 01 - Udpdate the event basic information
+            // 01 - Update the event basic information
             const updatedEvent = await tx.event.update({
                 where: { id: eventId },
                 data: {
@@ -376,122 +389,22 @@ export class EventService {
             });
 
             // 02 - Handle ticket changes if provided and the event is paid
-            if (!updatedEvent.isFree && eventData.tickets && eventData.tickets.length > 0) {
-                // 02.1 -  Delete existing tickets
-                await tx.ticket.deleteMany({
-                    where: { eventId, quantitySold: 0 } // Exclude sold tickets
-                });
-
-                // 02.2 - Create new tickets
-                await Promise.all(
-                    eventData.tickets.map(async (ticket) => {
-                        return tx.ticket.create({
-                            data: {
-                                eventId: updatedEvent.id,
-                                name: ticket.name,
-                                description: ticket.description,
-                                price: ticket.price,
-                                quantityTotal: ticket.quantityTotal,
-                                quantitySold: 0,
-                                salesStart: new Date(ticket.salesStart),
-                                salesEnd: new Date(ticket.salesEnd)
-                            }
-                        });
-                    })
-                );
-            }
+            // Ticket management is now handled by dedicated Ticket routes and services.
+            // The block for ticket handling in updateEvent has been removed.
 
             // 03 - Handle question changes if provided
-            if (eventData.questions !== undefined) { // Check if questions array is provided (even if empty)
-                // 03.1 - Fetch existing EventQuestions links for this event, including response count
-                const existingEventQuestions = await tx.eventQuestions.findMany({
-                    where: { eventId: eventId },
-                    select: {
-                        id: true,        // ID of the EventQuestions link itself
-                        questionId: true,
-                        isRequired: true,
-                        displayOrder: true,
-                        _count: {
-                            select: { responses: true }
-                        }
-                    }
-                });
-                // Map questionId to the EventQuestions link record for quick lookup
-                const existingEventQuestionMap = new Map(existingEventQuestions.map(eq => [eq.questionId, eq]));
-                // Track EventQuestions link IDs that should remain after the update
-                const finalEventQuestionLinkIds = new Set<number>();
-
-                // 03.2 - Process incoming questions
-                for (const incomingQuestion of eventData.questions) {
-                    let questionId: number;
-
-                    // Try to find an existing Question by its text
-                    const existingQuestion = await tx.question.findFirst({
-                        where: { questionText: incomingQuestion.questionText }
-                    });
-
-                    if (existingQuestion) {
-                        questionId = existingQuestion.id;
-                    } else {
-                        // Create a new Question if it doesn't exist
-                        const newQuestion = await tx.question.create({
-                            data: {
-                                questionText: incomingQuestion.questionText,
-                                questionType: 'TEXT' // Defaulting type
-                            }
-                        });
-                        questionId = newQuestion.id;
-                    }
-
-                    // Check if this question is already linked to the event
-                    const existingLink = existingEventQuestionMap.get(questionId);
-
-                    if (existingLink) {
-                        // Update existing EventQuestions link if needed
-                        if (existingLink.isRequired !== incomingQuestion.isRequired || existingLink.displayOrder !== incomingQuestion.displayOrder) {
-                            await tx.eventQuestions.update({
-                                where: { id: existingLink.id },
-                                data: {
-                                    isRequired: incomingQuestion.isRequired,
-                                    displayOrder: incomingQuestion.displayOrder
-                                }
-                            });
-                        }
-                        // Mark this EventQuestions link ID as final (should not be deleted)
-                        finalEventQuestionLinkIds.add(existingLink.id);
-                    } else {
-                        // Create new EventQuestions link
-                        const newLink = await tx.eventQuestions.create({
-                            data: {
-                                eventId: eventId,
-                                questionId: questionId,
-                                isRequired: incomingQuestion.isRequired,
-                                displayOrder: incomingQuestion.displayOrder
-                            }
-                        });
-                        // Mark this new EventQuestions link ID as final
-                        finalEventQuestionLinkIds.add(newLink.id);
-                    }
-                }
-
-                // 03.3 - Determine which existing EventQuestions links to delete
-                const eventQuestionLinkIdsToDelete = existingEventQuestions
-                    .filter(eq => !finalEventQuestionLinkIds.has(eq.id) && eq._count.responses === 0) // Only delete if not in the final set AND no responses exist
-                    .map(eq => eq.id);
-
-                if (eventQuestionLinkIdsToDelete.length > 0) {
-                    await tx.eventQuestions.deleteMany({
-                        where: {
-                            id: {
-                                in: eventQuestionLinkIdsToDelete
-                            }
-                        }
-                    });
-                }
-            } // End of question handling block
+            // With dedicated EventQuestion routes and services, this complex sync logic
+            // is no longer needed here. Event updates should focus on core event properties.
+            // If eventData.questions is still part of CreateEventDTO for updates,
+            // it might be ignored here, or a simpler update could occur if absolutely necessary,
+            // but primary management should be via /events/:eventId/questions/* endpoints.
+            // For now, we will remove this block.
+            // if (eventData.questions !== undefined) { ... } // Entire block removed.
 
             // 04 - Return the updated event with all details
-            return this.getEventWithDetails(eventId); // Ensure this fetches the latest state
+            // Note: If questions are no longer part of this DTO or are ignored,
+            // getEventWithDetails will still fetch the current state of linked questions.
+            return this.getEventWithDetails(eventId); 
         });
     }
 
