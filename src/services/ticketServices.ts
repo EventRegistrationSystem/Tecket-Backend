@@ -1,7 +1,10 @@
 import { prisma } from '../config/prisma';
-import { Ticket, UserRole } from '@prisma/client'; // Import UserRole
-import { ValidationError, AuthorizationError, NotFoundError } from '../utils/errors'; // Added NotFoundError, ensure it's used or remove
+import { Ticket, UserRole, Prisma } from '@prisma/client'; // Import UserRole and Prisma
+import { ValidationError, AuthorizationError, NotFoundError } from '../utils/errors';
 import { CreateTicketDTO, UpdateTicketDTO } from '../types/ticketTypes';
+
+// Define a type for the Prisma transaction client
+type PrismaTransactionClient = Omit<Prisma.TransactionClient, "$commit" | "$rollback">;
 
 export class TicketService {
     /**
@@ -10,9 +13,17 @@ export class TicketService {
      * @param userRole The role of the user.
      * @param eventId The ID of the event to add the ticket to.
      * @param ticketData Data for the new ticket.
+     * @param tx Optional Prisma transaction client
      */
-    static async createTicket(userId: number, userRole: UserRole, eventId: number, ticketData: CreateTicketDTO): Promise<Ticket> {
-        const event = await prisma.event.findUnique({
+    static async createTicket(
+        userId: number, 
+        userRole: UserRole, 
+        eventId: number, 
+        ticketData: CreateTicketDTO, 
+        tx?: PrismaTransactionClient
+    ): Promise<Ticket> {
+        const prismaClient = tx || prisma;
+        const event = await prismaClient.event.findUnique({
             where: { id: eventId },
             select: { id: true, organiserId: true, endDateTime: true }
         });
@@ -41,9 +52,9 @@ export class TicketService {
         }
 
         // Create the ticket
-        return prisma.ticket.create({
+        return prismaClient.ticket.create({
             data: {
-                eventId, // Use the validated eventId
+                eventId,
                 name: ticketData.name,
                 description: ticketData.description,
                 price: ticketData.price,
@@ -64,11 +75,13 @@ export class TicketService {
      */
     static async updateTicket(
         userId: number,
-        userRole: UserRole, // Added userRole
+        userRole: UserRole,
         ticketId: number,
-        ticketData: UpdateTicketDTO): Promise<Ticket> {
-
-        const ticket = await prisma.ticket.findUnique({
+        ticketData: UpdateTicketDTO,
+        tx?: PrismaTransactionClient // Added tx
+    ): Promise<Ticket> {
+        const prismaClient = tx || prisma;
+        const ticket = await prismaClient.ticket.findUnique({
             where: { id: ticketId },
             include: { event: { select: { organiserId: true, endDateTime: true } } }
         });
@@ -108,7 +121,7 @@ export class TicketService {
         }
 
         // Update the ticket
-        return prisma.ticket.update({
+        return prismaClient.ticket.update({
             where: { id: ticketId },
             data: {
                 name: ticketData.name,
@@ -127,9 +140,11 @@ export class TicketService {
      * @param userId The ID of the user attempting the deletion.
      * @param userRole The role of the user.
      * @param ticketId The ID of the ticket to delete.
+     * @param tx Optional Prisma transaction client
      */
-    static async deleteTicket(userId: number, userRole: UserRole, ticketId: number): Promise<void> {
-        const ticket = await prisma.ticket.findUnique({
+    static async deleteTicket(userId: number, userRole: UserRole, ticketId: number, tx?: PrismaTransactionClient): Promise<void> {
+        const prismaClient = tx || prisma;
+        const ticket = await prismaClient.ticket.findUnique({
             where: { id: ticketId },
             include: { event: { select: { organiserId: true } } }
         });
@@ -149,7 +164,7 @@ export class TicketService {
         }
 
         // Delete the ticket
-        await prisma.ticket.delete({
+        await prismaClient.ticket.delete({
             where: { id: ticketId }
         });
     }

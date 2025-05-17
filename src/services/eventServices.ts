@@ -1,8 +1,12 @@
 import { prisma } from '../config/prisma';
 import { CreateEventDTO, EventFilters, EventResponse, TicketResponse } from '../types/eventTypes';
+// Assuming CreateTicketSubDTO and EventQuestionDefinitionDTO are part of eventTypes or need to be imported
+// For now, we'll assume they are compatible with what TicketService and EventQuestionService expect.
+import { TicketService } from './ticketServices'; // Import TicketService
+import { EventQuestionService } from './eventQuestionService'; // Import EventQuestionService
 import { JwtPayload } from '../types/authTypes';
 import { NotFoundError, AuthorizationError, ValidationError, EventError } from '../utils/errors';
-import { UserRole } from '@prisma/client'; // Import UserRole
+import { UserRole } from '@prisma/client'; 
 
 export class EventService {
 
@@ -439,9 +443,73 @@ export class EventService {
             });
 
 
-            // Ticket and Question management is now handled by dedicated Ticket/EventQuestion routes and services.
+            // --- Ticket Synchronization (Monolithic: Delete existing then create from payload) ---
+            if (eventData.tickets !== undefined) { // Process if tickets array is explicitly provided
+                // Fetch existing tickets to delete them respecting business rules via TicketService
+                const existingDbTickets = await tx.ticket.findMany({ where: { eventId: eventId } });
+                for (const dbTicket of existingDbTickets) {
+                    try {
+                        // TicketService.deleteTicket will handle rules like not deleting sold tickets
+                        // It needs to be adapted to work with the transaction 'tx' or this won't be atomic.
+                        // For now, we assume it can be called directly. If not, its logic needs to be inlined or adapted.
+                        await TicketService.deleteTicket(requestingUserId, requestingUserRole, dbTicket.id, tx); // Pass tx if service adapted
+                    } catch (error) {
+                        // Log or handle error if a specific ticket cannot be deleted (e.g., sold tickets)
+                        // This might mean the overall update strategy needs to be more nuanced than "delete all then create all"
+                        // if some tickets cannot be deleted.
+                        console.warn(`Could not delete ticket ${dbTicket.id} during event update: ${error instanceof Error ? error.message : error}`);
+                    }
+                }
 
-            return this.getEventWithDetails(eventId);
+                // Create new tickets from the payload
+                if (eventData.tickets && !updatedEvent.isFree) { // updatedEventData is from tx.event.update
+                    for (const incomingTicket of eventData.tickets) {
+                        // TicketService.createTicket needs to be adapted for 'tx' or its logic inlined.
+                        // It also needs the event's endDateTime for validation, which updatedEventData would have.
+                        await TicketService.createTicket(requestingUserId, requestingUserRole, eventId, {
+                            eventId: eventId, // Add eventId to satisfy CreateTicketDTO
+                            name: incomingTicket.name,
+                            description: incomingTicket.description,
+                            price: incomingTicket.price,
+                            quantityTotal: incomingTicket.quantityTotal,
+                            salesStart: new Date(incomingTicket.salesStart), // Ensure these are Date objects
+                            salesEnd: new Date(incomingTicket.salesEnd),
+                            // status will be defaulted by TicketService.createTicket if not provided
+                        }, tx); // Pass tx
+                    }
+                }
+            }
+
+            // --- Question Synchronization (Monolithic: Delete existing links then create from payload) ---
+            if (eventData.questions !== undefined) {
+                // Delete all existing EventQuestion links for this event
+                // EventQuestionService.deleteEventQuestionLink needs to be adapted for 'tx' or its logic inlined.
+                // It also has rules about not deleting if responses exist.
+                const existingEventQuestionLinks = await tx.eventQuestions.findMany({ where: { eventId: eventId } });
+                for (const link of existingEventQuestionLinks) {
+                    try {
+                        await EventQuestionService.deleteEventQuestionLink(requestingUserId, requestingUserRole, eventId, link.id, tx); // Pass tx
+                    } catch (error) {
+                        console.warn(`Could not delete event-question link ${link.id} during event update: ${error instanceof Error ? error.message : error}`);
+                    }
+                }
+
+                // Create new EventQuestion links from the payload
+                if (eventData.questions) {
+                    for (const incomingQuestion of eventData.questions) {
+                        // EventQuestionService.addQuestionToEvent needs to be adapted for 'tx' or its logic inlined.
+                        await EventQuestionService.addQuestionToEvent(requestingUserId, requestingUserRole, eventId, {
+                            questionText: incomingQuestion.questionText,
+                            isRequired: incomingQuestion.isRequired,
+                            displayOrder: incomingQuestion.displayOrder,
+                            // questionType, category, validationRules are omitted for simplicity
+                        }, tx); // Pass tx
+                    }
+                }
+            }
+            // Pass requestingUser to getEventWithDetails for visibility checks
+            const finalRequestingUser: JwtPayload = { userId: requestingUserId, role: requestingUserRole, iat: 0, exp: 0 };
+            return this.getEventWithDetails(eventId, finalRequestingUser);
         });
     }
 

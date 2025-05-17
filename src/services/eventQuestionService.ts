@@ -1,7 +1,10 @@
 import { prisma } from '../config/prisma';
 import { AddEventQuestionLinkDTO, UpdateEventQuestionLinkDTO, EventQuestionWithQuestionDetails } from '../types/questionTypes';
 import { AuthorizationError, ValidationError, NotFoundError } from '../utils/errors';
-import { UserRole } from '@prisma/client'; // Import UserRole
+import { UserRole, Prisma } from '@prisma/client'; // Import UserRole and Prisma
+
+// Define a type for the Prisma transaction client
+type PrismaTransactionClient = Omit<Prisma.TransactionClient, "$commit" | "$rollback">;
 
 export class EventQuestionService {
 
@@ -10,19 +13,19 @@ export class EventQuestionService {
      * @param userId - The ID of the user attempting the action.
      * @param userRole - The role of the user.
      * @param eventId - The ID of the event.
+     * @param tx Optional Prisma transaction client
      */
-    private static async verifyAdminOrEventOrganizer(userId: number, userRole: UserRole, eventId: number): Promise<void> {
+    private static async verifyAdminOrEventOrganizer(userId: number, userRole: UserRole, eventId: number, tx?: PrismaTransactionClient): Promise<void> {
+        const prismaClient = tx || prisma;
         if (userRole === UserRole.ADMIN) {
-            // Admin has universal access, check if event exists
-            const eventExists = await prisma.event.count({ where: { id: eventId } });
+            const eventExists = await prismaClient.event.count({ where: { id: eventId } });
             if (eventExists === 0) {
                 throw new NotFoundError('Event not found');
             }
-            return; // Admin is authorized
+            return; 
         }
 
-        // For other roles (e.g., ORGANIZER), check ownership
-        const event = await prisma.event.findUnique({
+        const event = await prismaClient.event.findUnique({
             where: { id: eventId },
             select: { organiserId: true }
         });
@@ -38,13 +41,14 @@ export class EventQuestionService {
      * Get all questions linked to a specific event.
      * @param eventId - The ID of the event.
      */
-    static async getEventQuestions(eventId: number): Promise<EventQuestionWithQuestionDetails[]> {
-        const eventExists = await prisma.event.count({ where: { id: eventId } });
+    static async getEventQuestions(eventId: number, tx?: PrismaTransactionClient): Promise<EventQuestionWithQuestionDetails[]> {
+        const prismaClient = tx || prisma;
+        const eventExists = await prismaClient.event.count({ where: { id: eventId } });
         if (eventExists === 0) {
             throw new NotFoundError('Event not found');
         }
 
-        return prisma.eventQuestions.findMany({
+        return prismaClient.eventQuestions.findMany({
             where: { eventId },
             include: {
                 question: true, // Include the details of the linked global Question
@@ -64,28 +68,28 @@ export class EventQuestionService {
      * @param userRole - The role of the user.
      * @param eventId - The ID of the event.
      * @param data - DTO containing question details and link properties.
+     * @param tx Optional Prisma transaction client
      */
-    static async addQuestionToEvent(userId: number, userRole: UserRole, eventId: number, data: AddEventQuestionLinkDTO) {
-        await this.verifyAdminOrEventOrganizer(userId, userRole, eventId);
+    static async addQuestionToEvent(userId: number, userRole: UserRole, eventId: number, data: AddEventQuestionLinkDTO, tx?: PrismaTransactionClient) {
+        const prismaClient = tx || prisma;
+        await this.verifyAdminOrEventOrganizer(userId, userRole, eventId, prismaClient);
 
         let questionId: number;
 
         if (data.questionId) {
-            // Link an existing global question
-            const globalQuestionExists = await prisma.question.count({ where: { id: data.questionId } });
+            const globalQuestionExists = await prismaClient.question.count({ where: { id: data.questionId } });
             if (globalQuestionExists === 0) {
                 throw new NotFoundError(`Global question with ID ${data.questionId} not found.`);
             }
             questionId = data.questionId;
         } else if (data.questionText) {
-            // Find or create the global question by text
-            const existingGlobalQuestion = await prisma.question.findFirst({
+            const existingGlobalQuestion = await prismaClient.question.findFirst({
                 where: { questionText: data.questionText }
             });
             if (existingGlobalQuestion) {
                 questionId = existingGlobalQuestion.id;
             } else {
-                const newGlobalQuestion = await prisma.question.create({
+                const newGlobalQuestion = await prismaClient.question.create({
                     data: {
                         questionText: data.questionText,
                         questionType: data.questionType || 'TEXT',
@@ -100,14 +104,14 @@ export class EventQuestionService {
         }
 
         // Check if this global question is already linked to this event
-        const existingLink = await prisma.eventQuestions.findFirst({
+        const existingLink = await prismaClient.eventQuestions.findFirst({
             where: { eventId, questionId }
         });
         if (existingLink) {
             throw new ValidationError('This question is already linked to the event.');
         }
 
-        return prisma.eventQuestions.create({
+        return prismaClient.eventQuestions.create({
             data: {
                 eventId,
                 questionId,
@@ -128,11 +132,13 @@ export class EventQuestionService {
      * @param eventId - The ID of the event (for authorization context).
      * @param eventQuestionId - The ID of the EventQuestions link record.
      * @param data - DTO containing properties to update.
+     * @param tx Optional Prisma transaction client
      */
-    static async updateEventQuestionLink(userId: number, userRole: UserRole, eventId: number, eventQuestionId: number, data: UpdateEventQuestionLinkDTO) {
-        await this.verifyAdminOrEventOrganizer(userId, userRole, eventId);
+    static async updateEventQuestionLink(userId: number, userRole: UserRole, eventId: number, eventQuestionId: number, data: UpdateEventQuestionLinkDTO, tx?: PrismaTransactionClient) {
+        const prismaClient = tx || prisma;
+        await this.verifyAdminOrEventOrganizer(userId, userRole, eventId, prismaClient);
 
-        const existingLink = await prisma.eventQuestions.findUnique({
+        const existingLink = await prismaClient.eventQuestions.findUnique({
             where: { id: eventQuestionId }
         });
 
@@ -147,7 +153,7 @@ export class EventQuestionService {
             throw new ValidationError('No update data provided for isRequired or displayOrder.');
         }
 
-        return prisma.eventQuestions.update({
+        return prismaClient.eventQuestions.update({
             where: { id: eventQuestionId },
             data: {
                 isRequired: data.isRequired,
@@ -164,11 +170,13 @@ export class EventQuestionService {
      * @param userRole - The role of the user.
      * @param eventId - The ID of the event (for authorization context).
      * @param eventQuestionId - The ID of the EventQuestions link record.
+     * @param tx Optional Prisma transaction client
      */
-    static async deleteEventQuestionLink(userId: number, userRole: UserRole, eventId: number, eventQuestionId: number): Promise<void> {
-        await this.verifyAdminOrEventOrganizer(userId, userRole, eventId);
+    static async deleteEventQuestionLink(userId: number, userRole: UserRole, eventId: number, eventQuestionId: number, tx?: PrismaTransactionClient): Promise<void> {
+        const prismaClient = tx || prisma;
+        await this.verifyAdminOrEventOrganizer(userId, userRole, eventId, prismaClient);
 
-        const existingLink = await prisma.eventQuestions.findUnique({
+        const existingLink = await prismaClient.eventQuestions.findUnique({
             where: { id: eventQuestionId },
             include: { _count: { select: { responses: true } } }
         });
@@ -184,7 +192,7 @@ export class EventQuestionService {
             throw new ValidationError('Cannot remove a question that has already received responses. Consider making it not required or changing its display order.');
         }
 
-        await prisma.eventQuestions.delete({
+        await prismaClient.eventQuestions.delete({
             where: { id: eventQuestionId }
         });
     }
