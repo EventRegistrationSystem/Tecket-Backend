@@ -190,7 +190,7 @@ router.get('/events/:eventId/tickets/:ticketId/availability', TicketController.c
  */
 router.post('/events/:eventId/tickets',
     authenticate,
-    authorize('ORGANIZER'),
+    authorize('ORGANIZER', 'ADMIN'), 
     validateRequest(createTicketSchema),
     TicketController.createTicket
 );
@@ -249,7 +249,7 @@ router.post('/events/:eventId/tickets',
  */
 router.put('/events/:eventId/tickets/:ticketId',
     authenticate,
-    authorize('ORGANIZER'), // Authorization check: Only organizers
+    authorize('ORGANIZER', 'ADMIN'), // Authorization check: Only organizers
     validateRequest(updateTicketSchema), // Validation check
     TicketController.updateTicket
 );
@@ -303,7 +303,7 @@ router.put('/events/:eventId/tickets/:ticketId',
  */
 router.delete('/events/:eventId/tickets/:ticketId',
     authenticate,
-    authorize('ORGANIZER'), // Authorization check: Only organizers
+    authorize('ORGANIZER', 'ADMIN'), // Authorization check: Only organizers
     TicketController.deleteTicket
 );
 

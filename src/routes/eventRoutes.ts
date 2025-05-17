@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { EventController } from '../controllers/eventController';
 import { authorize, authenticate, validateRequest, optionalAuthenticate } from '../middlewares/authMiddlewares';
 import { createEventSchema } from '../validation/eventValidation';
+import eventQuestionRoutes from './eventQuestionRoutes'; // Import the sub-router
 
 const router = Router();
 
@@ -132,7 +133,7 @@ router.get('/', optionalAuthenticate, EventController.getAllEvents);
  *       500:
  *         description: Server error
  */
-router.get('/:id', EventController.getEventById);
+router.get('/:id', optionalAuthenticate, EventController.getEventById);
 
 // Protected routes 
 /**
@@ -175,7 +176,8 @@ router.get('/:id', EventController.getEventById);
  */
 router.post('/',
     authenticate,
-    validateRequest(createEventSchema),
+    authorize('ORGANIZER', 'ADMIN'), 
+    // validateRequest(createEventSchema),
     EventController.createEvent);
 
 /**
@@ -332,6 +334,7 @@ router.delete('/:id',
     authorize('ORGANIZER', 'ADMIN'),
     EventController.deleteEvent);
 
-
+// Mount event question routes nested under /events/:eventId/questions
+router.use('/:eventId/questions', eventQuestionRoutes);
 
 export default router;

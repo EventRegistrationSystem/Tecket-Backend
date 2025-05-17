@@ -1,28 +1,39 @@
 import { prisma } from '../config/prisma';
-import { Ticket } from '@prisma/client';
-import { ValidationError, AuthorizationError } from '../utils/errors'; // Import AuthorizationError
+import { Ticket, UserRole, Prisma } from '@prisma/client'; // Import UserRole and Prisma
+import { ValidationError, AuthorizationError, NotFoundError } from '../utils/errors';
 import { CreateTicketDTO, UpdateTicketDTO } from '../types/ticketTypes';
+
+// Define a type for the Prisma transaction client
+type PrismaTransactionClient = Omit<Prisma.TransactionClient, "$commit" | "$rollback">;
 
 export class TicketService {
     /**
      * Create a new ticket for an event
-     * @param userId The ID of the user attempting to create the ticket (should be the organizer)
-     * @param eventId The ID of the event to add the ticket to
-     * @param ticketData Data for the new ticket
+     * @param userId The ID of the user attempting to create the ticket.
+     * @param userRole The role of the user.
+     * @param eventId The ID of the event to add the ticket to.
+     * @param ticketData Data for the new ticket.
+     * @param tx Optional Prisma transaction client
      */
-    static async createTicket(userId: number, eventId: number, ticketData: CreateTicketDTO): Promise<Ticket> {
-        // Verify the event exists and get organiserId for auth check
-        const event = await prisma.event.findUnique({
+    static async createTicket(
+        userId: number, 
+        userRole: UserRole, 
+        eventId: number, 
+        ticketData: CreateTicketDTO, 
+        tx?: PrismaTransactionClient
+    ): Promise<Ticket> {
+        const prismaClient = tx || prisma;
+        const event = await prismaClient.event.findUnique({
             where: { id: eventId },
-            select: { id: true, organiserId: true, endDateTime: true } // Select needed fields
+            select: { id: true, organiserId: true, endDateTime: true }
         });
 
         if (!event) {
-            throw new ValidationError('Event not found');
+            throw new NotFoundError('Event not found'); // Changed to NotFoundError for consistency
         }
 
-        // Authorization Check: Ensure the user owns the event
-        if (event.organiserId !== userId) {
+        // Authorization Check: User must be ADMIN or own the event
+        if (userRole !== UserRole.ADMIN && event.organiserId !== userId) {
             throw new AuthorizationError('You are not authorized to add tickets to this event.');
         }
 
@@ -41,9 +52,9 @@ export class TicketService {
         }
 
         // Create the ticket
-        return prisma.ticket.create({
+        return prismaClient.ticket.create({
             data: {
-                eventId, // Use the validated eventId
+                eventId,
                 name: ticketData.name,
                 description: ticketData.description,
                 price: ticketData.price,
@@ -62,19 +73,25 @@ export class TicketService {
      * @param ticketId The ID of the ticket to update
      * @param ticketData The new ticket data
      */
-    static async updateTicket(userId: number, ticketId: number, ticketData: UpdateTicketDTO): Promise<Ticket> {
-        // Verify the ticket exists and include event for ownership check
-        const ticket = await prisma.ticket.findUnique({
+    static async updateTicket(
+        userId: number,
+        userRole: UserRole,
+        ticketId: number,
+        ticketData: UpdateTicketDTO,
+        tx?: PrismaTransactionClient // Added tx
+    ): Promise<Ticket> {
+        const prismaClient = tx || prisma;
+        const ticket = await prismaClient.ticket.findUnique({
             where: { id: ticketId },
-            include: { event: { select: { organiserId: true, endDateTime: true } } } // Include event organiserId and endDateTime
+            include: { event: { select: { organiserId: true, endDateTime: true } } }
         });
 
         if (!ticket) {
-            throw new ValidationError('Ticket not found');
+            throw new NotFoundError('Ticket not found');
         }
 
-        // Authorization Check: Ensure the user owns the event
-        if (ticket.event.organiserId !== userId) {
+        // Authorization Check: User must be ADMIN or own the event
+        if (userRole !== UserRole.ADMIN && ticket.event.organiserId !== userId) {
             throw new AuthorizationError('Permission denied to update this ticket.');
         }
 
@@ -85,7 +102,7 @@ export class TicketService {
         const newSalesEnd = ticketData.salesEnd ? new Date(ticketData.salesEnd) : currentSalesEnd;
 
         if (newSalesStart && newSalesEnd && newSalesEnd <= newSalesStart) {
-             throw new ValidationError('Sales end date must be after sales start date');
+            throw new ValidationError('Sales end date must be after sales start date');
         }
 
         // Validate event end date
@@ -104,7 +121,7 @@ export class TicketService {
         }
 
         // Update the ticket
-        return prisma.ticket.update({
+        return prismaClient.ticket.update({
             where: { id: ticketId },
             data: {
                 name: ticketData.name,
@@ -120,22 +137,24 @@ export class TicketService {
 
     /**
      * Delete a ticket
-     * @param userId The ID of the user attempting the deletion
-     * @param ticketId The ID of the ticket to delete
+     * @param userId The ID of the user attempting the deletion.
+     * @param userRole The role of the user.
+     * @param ticketId The ID of the ticket to delete.
+     * @param tx Optional Prisma transaction client
      */
-    static async deleteTicket(userId: number, ticketId: number): Promise<void> {
-        // Verify the ticket exists and include event for ownership check
-        const ticket = await prisma.ticket.findUnique({
+    static async deleteTicket(userId: number, userRole: UserRole, ticketId: number, tx?: PrismaTransactionClient): Promise<void> {
+        const prismaClient = tx || prisma;
+        const ticket = await prismaClient.ticket.findUnique({
             where: { id: ticketId },
-            include: { event: { select: { organiserId: true } } } // Include event organiserId
+            include: { event: { select: { organiserId: true } } }
         });
 
         if (!ticket) {
-            throw new ValidationError('Ticket not found');
+            throw new NotFoundError('Ticket not found');
         }
 
-        // Authorization Check: Ensure the user owns the event
-        if (ticket.event.organiserId !== userId) {
+        // Authorization Check: User must be ADMIN or own the event
+        if (userRole !== UserRole.ADMIN && ticket.event.organiserId !== userId) {
             throw new AuthorizationError('Permission denied to delete this ticket.');
         }
 
@@ -145,7 +164,7 @@ export class TicketService {
         }
 
         // Delete the ticket
-        await prisma.ticket.delete({
+        await prismaClient.ticket.delete({
             where: { id: ticketId }
         });
     }
@@ -154,10 +173,10 @@ export class TicketService {
      * Get tickets for an event
      */
     static async getTicketsByEvent(eventId: number): Promise<Ticket[]> {
-        // Verify the event exists (optional, could rely on FK constraints or route validation)
+        // Verify the event exists
         const eventExists = await prisma.event.count({ where: { id: eventId } });
         if (eventExists === 0) {
-             throw new ValidationError('Event not found');
+            throw new NotFoundError('Event not found');
         }
 
 
@@ -180,7 +199,7 @@ export class TicketService {
         });
 
         if (!ticket) {
-            throw new ValidationError('Ticket not found');
+            throw new NotFoundError('Ticket not found');
         }
 
         return ticket;
@@ -200,7 +219,7 @@ export class TicketService {
         });
 
         if (!ticket) {
-            throw new ValidationError('Ticket not found');
+            throw new NotFoundError('Ticket not found');
         }
 
         const now = new Date();

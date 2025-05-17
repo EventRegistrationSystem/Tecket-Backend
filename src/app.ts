@@ -36,10 +36,10 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
 app.use('/api/auth', authRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/user', userRoutes);
-app.use('/api/tickets', ticketRoutes); 
 app.use('/api/registrations', registrationRoutes);
-// Mount the payment routes, including the webhook route with raw body parser and verification
-app.use('/api/payments',paymentRoutes);
+// app.use('/api/payments', paymentRoutes);
+
+app.use('/api', ticketRoutes);
 
 
 export default app;

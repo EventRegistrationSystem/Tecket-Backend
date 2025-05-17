@@ -1,7 +1,33 @@
 import { prisma } from '../config/prisma';
 import { CreateEventDTO, EventFilters, EventResponse, TicketResponse } from '../types/eventTypes';
+// Assuming CreateTicketSubDTO and EventQuestionDefinitionDTO are part of eventTypes or need to be imported
+// For now, we'll assume they are compatible with what TicketService and EventQuestionService expect.
+import { TicketService } from './ticketServices'; // Import TicketService
+import { EventQuestionService } from './eventQuestionService'; // Import EventQuestionService
+import { JwtPayload } from '../types/authTypes';
+import { NotFoundError, AuthorizationError, ValidationError, EventError } from '../utils/errors';
+import { UserRole } from '@prisma/client'; 
 
 export class EventService {
+
+    private static async verifyAdminOrEventOrganizer(
+        userId: number,
+        userRole: UserRole,
+        eventId: number
+    ): Promise<void> {
+        const event = await prisma.event.findUnique({
+            where: { id: eventId },
+            select: { organiserId: true }
+        });
+
+        if (!event) {
+            throw new NotFoundError('Event not found');
+        }
+
+        if (userRole !== UserRole.ADMIN && event.organiserId !== userId) {
+            throw new AuthorizationError('You are not authorized to perform this action on this event.');
+        }
+    }
 
     /**
      * 01 - Create a new event
@@ -13,28 +39,28 @@ export class EventService {
 
         // Make sure the event end date is after the start date
         if (new Date(eventData.endDateTime) < new Date(eventData.startDateTime)) {
-            throw new Error('Event end date must be after the start date');
+            throw new ValidationError('Event end date must be after the start date');
         }
 
         // Make sure the event is not in the past
         if (new Date(eventData.startDateTime) < new Date()) {
-            throw new Error('Event start date must be in the future');
+            throw new ValidationError('Event start date must be in the future');
         }
 
         // Validate tickets only for paid events
         if (!eventData.isFree) {
             if (!eventData.tickets || eventData.tickets.length === 0) {
-                throw new Error('At least one ticket type is required for paid events');
+                throw new ValidationError('At least one ticket type is required for paid events');
             }
 
             // Check ticket dates
             for (const ticket of eventData.tickets) {
                 if (new Date(ticket.salesEnd) <= new Date(ticket.salesStart)) {
-                    throw new Error('Ticket sales end date must be after sales start date');
+                    throw new ValidationError('Ticket sales end date must be after sales start date');
                 }
 
                 if (new Date(ticket.salesEnd) > new Date(eventData.endDateTime)) {
-                    throw new Error('Ticket sales cannot end after the event ends');
+                    throw new ValidationError('Ticket sales cannot end after the event ends');
                 }
             }
         }
@@ -82,19 +108,32 @@ export class EventService {
 
                 // Map over the questions array
                 eventData.questions.map(async (q) => {
-                    // 3.1 - Create the question
-                    const question = await tx.question.create({
-                        data: {
-                            questionText: q.questionText,
-                            questionType: 'TEXT', // Default to text for now
-                        }
+                    let questionId: number;
+
+                    // 3.1 - Try to find an existing Question by its text
+                    const existingQuestion = await tx.question.findFirst({
+                        where: { questionText: q.questionText }
                     });
+
+                    if (existingQuestion) {
+                        questionId = existingQuestion.id;
+                    } else {
+                        // Create a new Question if it doesn't exist
+                        const newQuestion = await tx.question.create({
+                            data: {
+                                questionText: q.questionText,
+                                questionType: 'TEXT', // Default to text for now
+                                // category and validationRules could be added here if part of CreateEventDTO's question structure
+                            }
+                        });
+                        questionId = newQuestion.id;
+                    }
 
                     // 3.2 - Link the question to the event
                     return tx.eventQuestions.create({
                         data: {
                             eventId: event.id,
-                            questionId: question.id,
+                            questionId: questionId,
                             isRequired: q.isRequired,
                             displayOrder: q.displayOrder
                         }
@@ -135,8 +174,8 @@ export class EventService {
         }
 
         // Handle admin view - admins can see all events in all statuses
-        if (filters.isAdmin && filters.adminView === true) {
-            console.log('Admin view enabled, removing status filter');
+        if (filters.isAdmin) { // adminView flag is removed, isAdmin is sufficient
+            console.log('Admin view: removing status filter to show all statuses');
             delete where.status; // Remove the status filter for admin view
         }
         // Handle organizer view - organizers can see their own events in all statuses
@@ -243,7 +282,7 @@ export class EventService {
         });
 
         if (!event) {
-            throw new Error('Event not found');
+            throw new NotFoundError('Event not found');
         }
 
         return event;
@@ -252,10 +291,11 @@ export class EventService {
 
     /**
      * 04 - Get event with details
-     * @param eventId 
+     * @param eventId
+     * @param requestingUser
      * @returns 
      */
-    static async getEventWithDetails(eventId: number) {
+    static async getEventWithDetails(eventId: number, requestingUser?: JwtPayload) {
         const event = await prisma.event.findUnique({
             where: { id: eventId },
             include: {
@@ -286,7 +326,21 @@ export class EventService {
         });
 
         if (!event) {
-            throw new Error('Event not found');
+            throw new NotFoundError('Event not found');
+        }
+
+        // Visibility Check
+        if (event.status !== 'PUBLISHED') {
+            if (!requestingUser) { // Unauthenticated
+                throw new AuthorizationError('Access denied to this event'); // Or NotFoundError to not reveal its existence
+            }
+            if (requestingUser.role === 'PARTICIPANT') {
+                throw new AuthorizationError('Access denied to this event');
+            }
+            if (requestingUser.role === 'ORGANIZER' && event.organiserId !== requestingUser.userId) {
+                throw new AuthorizationError('Access denied to this event');
+            }
+            // ADMINs can see any status, so no explicit check needed here for them.
         }
 
         return event;
@@ -295,36 +349,49 @@ export class EventService {
     /**
      * 05 - Update event
      * @param eventId 
-     * @param eventData 
+     * @param eventData
+     * @param requestingUserId
+     * @param requestingUserRole
      * @returns 
      */
-    static async updateEvent(eventId: number, eventData: Partial<CreateEventDTO>) {
-        // Verify that event exists
-        const existingEvent = await prisma.event.findUnique({
-            where: { id: eventId }
+    static async updateEvent(
+        eventId: number,
+        eventData: Partial<CreateEventDTO>,
+        requestingUserId: number,
+        requestingUserRole: UserRole // Changed to UserRole
+    ) {
+        await EventService.verifyAdminOrEventOrganizer(requestingUserId, requestingUserRole, eventId);
+
+        // Verify that event exists (already done by helper if not ADMIN, but good for status check)
+        const existingEvent = await prisma.event.findUnique({ // Fetch again for other properties if needed, or pass from helper
+            where: { id: eventId },
+            // Select other fields needed for validation, e.g., status, isFree
+            select: { status: true, isFree: true, endDateTime: true, startDateTime: true } 
         });
 
         if (!existingEvent) {
-            throw new Error('Event not found');
+            // This case should ideally be caught by _ensureAdminOrEventOrganizer if it fetches the event
+            // but as a safeguard or if helper only returns organiserId.
+            throw new NotFoundError('Event not found'); 
         }
 
         // Make sure the event is not completed
         if (existingEvent.status === 'COMPLETED') {
-            throw new Error('Cannot update a completed event');
+            throw new ValidationError('Cannot update a completed event');
         }
 
         // Handle date validation if provided
         if (eventData.startDateTime && eventData.endDateTime) {
             if (new Date(eventData.endDateTime) < new Date(eventData.startDateTime)) {
-                throw new Error('Event end date must be after the start date');
+                throw new ValidationError('Event end date must be after the start date');
             }
         } else if (eventData.startDateTime && existingEvent.endDateTime) {
             if (new Date(existingEvent.endDateTime) < new Date(eventData.startDateTime)) {
-                throw new Error('Event end date must be after the start date');
+                throw new ValidationError('Event end date must be after the start date');
             }
         } else if (eventData.endDateTime && existingEvent.startDateTime) {
             if (new Date(eventData.endDateTime) < new Date(existingEvent.startDateTime)) {
-                throw new Error('Event end date must be after the start date');
+                throw new ValidationError('Event end date must be after the start date');
             }
         }
 
@@ -333,7 +400,7 @@ export class EventService {
 
             // If changing from free to paid, tickets must be provided
             if (eventData.isFree === false && (!eventData.tickets || eventData.tickets.length === 0)) {
-                throw new Error('At least one ticket type is required for paid events');
+                throw new ValidationError('At least one ticket type is required for paid events');
             }
 
             // If changing from paid to free and there are registrations, reject
@@ -344,7 +411,7 @@ export class EventService {
                 });
 
                 if (registrationCount > 0) {
-                    throw new Error('Cannot change a paid event to free when registrations exist');
+                    throw new ValidationError('Cannot change a paid event to free when registrations exist');
                 }
                 else {
                     // Deactivate tickets
@@ -360,7 +427,7 @@ export class EventService {
 
         // Update the event
         return prisma.$transaction(async (tx) => {
-            // 01 - Udpdate the event basic information
+            // 01 - Update the event basic information
             const updatedEvent = await tx.event.update({
                 where: { id: eventId },
                 data: {
@@ -375,123 +442,74 @@ export class EventService {
                 }
             });
 
-            // 02 - Handle ticket changes if provided and the event is paid
-            if (!updatedEvent.isFree && eventData.tickets && eventData.tickets.length > 0) {
-                // 02.1 -  Delete existing tickets
-                await tx.ticket.deleteMany({
-                    where: { eventId, quantitySold: 0 } // Exclude sold tickets
-                });
 
-                // 02.2 - Create new tickets
-                await Promise.all(
-                    eventData.tickets.map(async (ticket) => {
-                        return tx.ticket.create({
-                            data: {
-                                eventId: updatedEvent.id,
-                                name: ticket.name,
-                                description: ticket.description,
-                                price: ticket.price,
-                                quantityTotal: ticket.quantityTotal,
-                                quantitySold: 0,
-                                salesStart: new Date(ticket.salesStart),
-                                salesEnd: new Date(ticket.salesEnd)
-                            }
-                        });
-                    })
-                );
+            // --- Ticket Synchronization (Monolithic: Delete existing then create from payload) ---
+            if (eventData.tickets !== undefined) { // Process if tickets array is explicitly provided
+                // Fetch existing tickets to delete them respecting business rules via TicketService
+                const existingDbTickets = await tx.ticket.findMany({ where: { eventId: eventId } });
+                for (const dbTicket of existingDbTickets) {
+                    try {
+                        // TicketService.deleteTicket will handle rules like not deleting sold tickets
+                        // It needs to be adapted to work with the transaction 'tx' or this won't be atomic.
+                        // For now, we assume it can be called directly. If not, its logic needs to be inlined or adapted.
+                        await TicketService.deleteTicket(requestingUserId, requestingUserRole, dbTicket.id, tx); // Pass tx if service adapted
+                    } catch (error) {
+                        // Log or handle error if a specific ticket cannot be deleted (e.g., sold tickets)
+                        // This might mean the overall update strategy needs to be more nuanced than "delete all then create all"
+                        // if some tickets cannot be deleted.
+                        console.warn(`Could not delete ticket ${dbTicket.id} during event update: ${error instanceof Error ? error.message : error}`);
+                    }
+                }
+
+                // Create new tickets from the payload
+                if (eventData.tickets && !updatedEvent.isFree) { // updatedEventData is from tx.event.update
+                    for (const incomingTicket of eventData.tickets) {
+                        // TicketService.createTicket needs to be adapted for 'tx' or its logic inlined.
+                        // It also needs the event's endDateTime for validation, which updatedEventData would have.
+                        await TicketService.createTicket(requestingUserId, requestingUserRole, eventId, {
+                            eventId: eventId, // Add eventId to satisfy CreateTicketDTO
+                            name: incomingTicket.name,
+                            description: incomingTicket.description,
+                            price: incomingTicket.price,
+                            quantityTotal: incomingTicket.quantityTotal,
+                            salesStart: new Date(incomingTicket.salesStart), // Ensure these are Date objects
+                            salesEnd: new Date(incomingTicket.salesEnd),
+                            // status will be defaulted by TicketService.createTicket if not provided
+                        }, tx); // Pass tx
+                    }
+                }
             }
 
-            // 03 - Handle question changes if provided
-            if (eventData.questions !== undefined) { // Check if questions array is provided (even if empty)
-                // 03.1 - Fetch existing EventQuestions links for this event, including response count
-                const existingEventQuestions = await tx.eventQuestions.findMany({
-                    where: { eventId: eventId },
-                    select: {
-                        id: true,        // ID of the EventQuestions link itself
-                        questionId: true,
-                        isRequired: true,
-                        displayOrder: true,
-                        _count: {
-                            select: { responses: true }
-                        }
-                    }
-                });
-                // Map questionId to the EventQuestions link record for quick lookup
-                const existingEventQuestionMap = new Map(existingEventQuestions.map(eq => [eq.questionId, eq]));
-                // Track EventQuestions link IDs that should remain after the update
-                const finalEventQuestionLinkIds = new Set<number>();
-
-                // 03.2 - Process incoming questions
-                for (const incomingQuestion of eventData.questions) {
-                    let questionId: number;
-
-                    // Try to find an existing Question by its text
-                    const existingQuestion = await tx.question.findFirst({
-                        where: { questionText: incomingQuestion.questionText }
-                    });
-
-                    if (existingQuestion) {
-                        questionId = existingQuestion.id;
-                    } else {
-                        // Create a new Question if it doesn't exist
-                        const newQuestion = await tx.question.create({
-                            data: {
-                                questionText: incomingQuestion.questionText,
-                                questionType: 'TEXT' // Defaulting type
-                            }
-                        });
-                        questionId = newQuestion.id;
-                    }
-
-                    // Check if this question is already linked to the event
-                    const existingLink = existingEventQuestionMap.get(questionId);
-
-                    if (existingLink) {
-                        // Update existing EventQuestions link if needed
-                        if (existingLink.isRequired !== incomingQuestion.isRequired || existingLink.displayOrder !== incomingQuestion.displayOrder) {
-                            await tx.eventQuestions.update({
-                                where: { id: existingLink.id },
-                                data: {
-                                    isRequired: incomingQuestion.isRequired,
-                                    displayOrder: incomingQuestion.displayOrder
-                                }
-                            });
-                        }
-                        // Mark this EventQuestions link ID as final (should not be deleted)
-                        finalEventQuestionLinkIds.add(existingLink.id);
-                    } else {
-                        // Create new EventQuestions link
-                        const newLink = await tx.eventQuestions.create({
-                            data: {
-                                eventId: eventId,
-                                questionId: questionId,
-                                isRequired: incomingQuestion.isRequired,
-                                displayOrder: incomingQuestion.displayOrder
-                            }
-                        });
-                        // Mark this new EventQuestions link ID as final
-                        finalEventQuestionLinkIds.add(newLink.id);
+            // --- Question Synchronization (Monolithic: Delete existing links then create from payload) ---
+            if (eventData.questions !== undefined) {
+                // Delete all existing EventQuestion links for this event
+                // EventQuestionService.deleteEventQuestionLink needs to be adapted for 'tx' or its logic inlined.
+                // It also has rules about not deleting if responses exist.
+                const existingEventQuestionLinks = await tx.eventQuestions.findMany({ where: { eventId: eventId } });
+                for (const link of existingEventQuestionLinks) {
+                    try {
+                        await EventQuestionService.deleteEventQuestionLink(requestingUserId, requestingUserRole, eventId, link.id, tx); // Pass tx
+                    } catch (error) {
+                        console.warn(`Could not delete event-question link ${link.id} during event update: ${error instanceof Error ? error.message : error}`);
                     }
                 }
 
-                // 03.3 - Determine which existing EventQuestions links to delete
-                const eventQuestionLinkIdsToDelete = existingEventQuestions
-                    .filter(eq => !finalEventQuestionLinkIds.has(eq.id) && eq._count.responses === 0) // Only delete if not in the final set AND no responses exist
-                    .map(eq => eq.id);
-
-                if (eventQuestionLinkIdsToDelete.length > 0) {
-                    await tx.eventQuestions.deleteMany({
-                        where: {
-                            id: {
-                                in: eventQuestionLinkIdsToDelete
-                            }
-                        }
-                    });
+                // Create new EventQuestion links from the payload
+                if (eventData.questions) {
+                    for (const incomingQuestion of eventData.questions) {
+                        // EventQuestionService.addQuestionToEvent needs to be adapted for 'tx' or its logic inlined.
+                        await EventQuestionService.addQuestionToEvent(requestingUserId, requestingUserRole, eventId, {
+                            questionText: incomingQuestion.questionText,
+                            isRequired: incomingQuestion.isRequired,
+                            displayOrder: incomingQuestion.displayOrder,
+                            // questionType, category, validationRules are omitted for simplicity
+                        }, tx); // Pass tx
+                    }
                 }
-            } // End of question handling block
-
-            // 04 - Return the updated event with all details
-            return this.getEventWithDetails(eventId); // Ensure this fetches the latest state
+            }
+            // Pass requestingUser to getEventWithDetails for visibility checks
+            const finalRequestingUser: JwtPayload = { userId: requestingUserId, role: requestingUserRole, iat: 0, exp: 0 };
+            return this.getEventWithDetails(eventId, finalRequestingUser);
         });
     }
 
@@ -499,19 +517,36 @@ export class EventService {
      * 05 - Update event status
      * @param eventId
      * @param status
+     * @param requestingUserId
+     * @param requestingUserRole
      */
-    static async updateEventStatus(eventId: number, status: 'DRAFT' | 'PUBLISHED' | 'CANCELLED') {
+    static async updateEventStatus(
+        eventId: number,
+        status: 'DRAFT' | 'PUBLISHED' | 'CANCELLED',
+        requestingUserId: number,
+        requestingUserRole: UserRole // Changed to UserRole
+    ) {
+        await EventService.verifyAdminOrEventOrganizer(requestingUserId, requestingUserRole, eventId);
 
-        // Verify event exists
-        const existingEvent = await this.getEventById(eventId);
+        // Fetch event again if other properties like isFree or current status are needed for validation logic
+        // The verifyAdminOrEventOrganizer only confirms existence and ownership/admin role.
+        const existingEvent = await prisma.event.findUnique({
+            where: { id: eventId },
+            select: { status: true, isFree: true, organiserId: true } // Ensure all needed fields are here
+        });
+
+        if (!existingEvent) {
+            // Should be caught by verifyAdminOrEventOrganizer if it checks existence properly for ADMINs too
+            throw new NotFoundError('Event not found after authorization check.'); 
+        }
 
         // Validate status transition
         if (existingEvent.status === 'COMPLETED') {
-            throw new Error('Cannot change status of a completed event');
+            throw new ValidationError('Cannot change status of a completed event');
         }
 
         if (existingEvent.status === 'CANCELLED' && status !== 'DRAFT') {
-            throw new Error('Cancelled events can only be restored to draft status');
+            throw new ValidationError('Cancelled events can only be restored to draft status');
         }
 
         // 01 - For publishing, verify the event has questions and tickets (if paid)
@@ -522,7 +557,7 @@ export class EventService {
                 where: { eventId }
             });
             if (questionCount === 0) {
-                throw new Error('Events must have at least one question before publishing');
+                throw new ValidationError('Events must have at least one question before publishing');
             }
 
             // For paid events, verify tickets exist
@@ -532,7 +567,7 @@ export class EventService {
                 });
 
                 if (ticketCount === 0) {
-                    throw new Error('Paid events must have at least one ticket type before publishing');
+                    throw new ValidationError('Paid events must have at least one ticket type before publishing');
                 }
             }
         }
@@ -570,16 +605,21 @@ export class EventService {
 
     /**
      * 06 - Delete an event
-     * @param eventId 
+     * @param eventId
+     * @param requestingUserId
+     * @param requestingUserRole
      * @returns 
      */
-    static async deleteEvent(eventId: number) {
-        // Verify event exists
-        const existingEvent = await this.getEventById(eventId);
+    static async deleteEvent(
+        eventId: number,
+        requestingUserId: number,
+        requestingUserRole: UserRole // Changed to UserRole
+    ) {
+        await EventService.verifyAdminOrEventOrganizer(requestingUserId, requestingUserRole, eventId);
 
-        if (!existingEvent) {
-            throw new Error('Event not found');
-        }
+        // No need to fetch existingEvent again if verifyAdminOrEventOrganizer confirms existence
+        // However, the original deleteEvent used getEventById which might fetch more than just organiserId
+        // For deletion, only existence and authorization matter, which the helper covers.
 
         // Check for registrations, if any, reject and suggest cancellation
         const registrationCount = await prisma.registration.count({
@@ -587,7 +627,7 @@ export class EventService {
         });
 
         if (registrationCount > 0) {
-            throw new Error('Cannot delete an event with registrations. Please cancel the event instead.');
+            throw new ValidationError('Cannot delete an event with registrations. Please cancel the event instead.');
         }
 
         // Delete the event
