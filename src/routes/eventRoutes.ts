@@ -133,7 +133,7 @@ router.get('/', optionalAuthenticate, EventController.getAllEvents);
  *       500:
  *         description: Server error
  */
-router.get('/:id', EventController.getEventById);
+router.get('/:id', optionalAuthenticate, EventController.getEventById);
 
 // Protected routes 
 /**
