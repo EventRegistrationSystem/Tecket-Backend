@@ -1,7 +1,7 @@
-import { Request, Response } from 'express';
+import { Request, Response, NextFunction } from 'express'; // Added NextFunction
 import { EventService } from '../services/eventServices';
 import { CreateEventDTO, EventFilters } from '../types/eventTypes';
-import { ValidationError } from '../utils/errors';
+import { ValidationError, NotFoundError, AuthorizationError } from '../utils/errors'; // Import more error types
 
 export class EventController {
 
@@ -34,16 +34,18 @@ export class EventController {
                 message: 'Event created successfully'
             });
         }
-        catch (error) {
+        catch (error: any) {
             console.log("Error creating event: ", error);
-
-            res.status(500).json({
-                success: false,
-                message: 'Internal server error',
-                error: error instanceof Error ? error.message : 'Internal server error'
-            });
+            if (error instanceof ValidationError) {
+                res.status(400).json({ success: false, message: error.message });
+            } else {
+                res.status(500).json({
+                    success: false,
+                    message: 'Internal server error creating event',
+                    error: error.message || 'Internal server error'
+                });
+            }
         }
-
     }
 
     /**
@@ -115,13 +117,14 @@ export class EventController {
 
             res.json({ success: true, data: result });
         }
-        catch (error) {
+        catch (error: any) {
             console.error('Error getting events:', error);
-
+            // For getAllEvents, most errors are unexpected, so a generic 500 is often appropriate.
+            // Specific filtering errors might be caught by service if they become ValidationErrors.
             res.status(500).json({
                 success: false,
-                message: 'Internal server error',
-                error: error instanceof Error ? error.message : 'Unknown error'
+                message: 'Internal server error retrieving events',
+                error: error.message || 'Unknown error'
             });
         }
     }
@@ -154,15 +157,15 @@ export class EventController {
         }
         catch (error: any) { // Catch any error
             console.error('Error getting event:', error);
-            if (error.message === 'Event not found') {
+            if (error instanceof NotFoundError) {
                 res.status(404).json({ success: false, message: error.message });
-            } else if (error.message === 'Access denied to this event') { // Custom message from service
+            } else if (error instanceof AuthorizationError) {
                 res.status(403).json({ success: false, message: error.message });
             }
             else {
                 res.status(500).json({
                     success: false,
-                    message: 'Internal server error',
+                    message: 'Internal server error retrieving event',
                     error: error.message || 'Unknown error'
                 });
             }
@@ -205,11 +208,14 @@ export class EventController {
         }
         catch (error: any) { // Catch any error
             console.error('Error updating event:', error);
-            if (error.message === 'Event not found') { // Example of specific error handling
+            if (error instanceof NotFoundError) {
                 res.status(404).json({ success: false, message: error.message });
-            } else if (error.message === 'You are not authorized to update this event') {
+            } else if (error instanceof AuthorizationError) {
                 res.status(403).json({ success: false, message: error.message });
-            } else {
+            } else if (error instanceof ValidationError) {
+                res.status(400).json({ success: false, message: error.message });
+            }
+            else {
                 res.status(500).json({
                     success: false,
                     message: 'Error updating event',
@@ -265,11 +271,11 @@ export class EventController {
         }
         catch (error: any) { // Catch any error
             console.error('Error updating event status:', error);
-            if (error.message === 'Event not found') {
+            if (error instanceof NotFoundError) {
                 res.status(404).json({ success: false, message: error.message });
-            } else if (error.message === 'You are not authorized to update this event status' || error.message === 'Cancelled events can only be restored to draft status' || error.message === 'Cannot change status of a completed event') {
+            } else if (error instanceof AuthorizationError) {
                 res.status(403).json({ success: false, message: error.message });
-            } else if (error.message === 'Invalid status. Must be DRAFT, PUBLISHED, or CANCELLED' || error.message === 'Events must have at least one question before publishing' || error.message === 'Paid events must have at least one ticket type before publishing') {
+            } else if (error instanceof ValidationError) {
                 res.status(400).json({ success: false, message: error.message });
             }
             else {
@@ -319,11 +325,11 @@ export class EventController {
         }
         catch (err: any) { // Catch any error
             console.error('Error deleting event:', err);
-            if (err.message === 'Event not found') {
+            if (err instanceof NotFoundError) {
                 res.status(404).json({ success: false, message: err.message });
-            } else if (err.message === 'You are not authorized to delete this event') {
+            } else if (err instanceof AuthorizationError) {
                 res.status(403).json({ success: false, message: err.message });
-            } else if (err.message === 'Cannot delete an event with registrations. Please cancel the event instead.') {
+            } else if (err instanceof ValidationError) {
                 res.status(400).json({ success: false, message: err.message });
             }
             else {

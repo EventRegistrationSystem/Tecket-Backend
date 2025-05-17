@@ -1,6 +1,7 @@
 import { prisma } from '../config/prisma';
 import { CreateEventDTO, EventFilters, EventResponse, TicketResponse } from '../types/eventTypes';
-import { JwtPayload } from '../types/authTypes'; // Assuming JwtPayload is suitable for req.user
+import { JwtPayload } from '../types/authTypes';
+import { NotFoundError, AuthorizationError, ValidationError, EventError } from '../utils/errors';
 
 export class EventService {
 
@@ -14,28 +15,28 @@ export class EventService {
 
         // Make sure the event end date is after the start date
         if (new Date(eventData.endDateTime) < new Date(eventData.startDateTime)) {
-            throw new Error('Event end date must be after the start date');
+            throw new ValidationError('Event end date must be after the start date');
         }
 
         // Make sure the event is not in the past
         if (new Date(eventData.startDateTime) < new Date()) {
-            throw new Error('Event start date must be in the future');
+            throw new ValidationError('Event start date must be in the future');
         }
 
         // Validate tickets only for paid events
         if (!eventData.isFree) {
             if (!eventData.tickets || eventData.tickets.length === 0) {
-                throw new Error('At least one ticket type is required for paid events');
+                throw new ValidationError('At least one ticket type is required for paid events');
             }
 
             // Check ticket dates
             for (const ticket of eventData.tickets) {
                 if (new Date(ticket.salesEnd) <= new Date(ticket.salesStart)) {
-                    throw new Error('Ticket sales end date must be after sales start date');
+                    throw new ValidationError('Ticket sales end date must be after sales start date');
                 }
 
                 if (new Date(ticket.salesEnd) > new Date(eventData.endDateTime)) {
-                    throw new Error('Ticket sales cannot end after the event ends');
+                    throw new ValidationError('Ticket sales cannot end after the event ends');
                 }
             }
         }
@@ -257,7 +258,7 @@ export class EventService {
         });
 
         if (!event) {
-            throw new Error('Event not found');
+            throw new NotFoundError('Event not found');
         }
 
         return event;
@@ -301,19 +302,19 @@ export class EventService {
         });
 
         if (!event) {
-            throw new Error('Event not found');
+            throw new NotFoundError('Event not found');
         }
 
         // Visibility Check
         if (event.status !== 'PUBLISHED') {
             if (!requestingUser) { // Unauthenticated
-                throw new Error('Access denied to this event'); // Or 'Event not found' to not reveal its existence
+                throw new AuthorizationError('Access denied to this event'); // Or NotFoundError to not reveal its existence
             }
             if (requestingUser.role === 'PARTICIPANT') {
-                throw new Error('Access denied to this event');
+                throw new AuthorizationError('Access denied to this event');
             }
             if (requestingUser.role === 'ORGANIZER' && event.organiserId !== requestingUser.userId) {
-                throw new Error('Access denied to this event');
+                throw new AuthorizationError('Access denied to this event');
             }
             // ADMINs can see any status, so no explicit check needed here for them.
         }
@@ -341,31 +342,31 @@ export class EventService {
         });
 
         if (!existingEvent) {
-            throw new Error('Event not found');
+            throw new NotFoundError('Event not found');
         }
 
         // Ownership Check / Admin Bypass
         if (requestingUserRole !== 'ADMIN' && existingEvent.organiserId !== requestingUserId) {
-            throw new Error('You are not authorized to update this event');
+            throw new AuthorizationError('You are not authorized to update this event');
         }
 
         // Make sure the event is not completed
         if (existingEvent.status === 'COMPLETED') {
-            throw new Error('Cannot update a completed event');
+            throw new ValidationError('Cannot update a completed event');
         }
 
         // Handle date validation if provided
         if (eventData.startDateTime && eventData.endDateTime) {
             if (new Date(eventData.endDateTime) < new Date(eventData.startDateTime)) {
-                throw new Error('Event end date must be after the start date');
+                throw new ValidationError('Event end date must be after the start date');
             }
         } else if (eventData.startDateTime && existingEvent.endDateTime) {
             if (new Date(existingEvent.endDateTime) < new Date(eventData.startDateTime)) {
-                throw new Error('Event end date must be after the start date');
+                throw new ValidationError('Event end date must be after the start date');
             }
         } else if (eventData.endDateTime && existingEvent.startDateTime) {
             if (new Date(eventData.endDateTime) < new Date(existingEvent.startDateTime)) {
-                throw new Error('Event end date must be after the start date');
+                throw new ValidationError('Event end date must be after the start date');
             }
         }
 
@@ -374,7 +375,7 @@ export class EventService {
 
             // If changing from free to paid, tickets must be provided
             if (eventData.isFree === false && (!eventData.tickets || eventData.tickets.length === 0)) {
-                throw new Error('At least one ticket type is required for paid events');
+                throw new ValidationError('At least one ticket type is required for paid events');
             }
 
             // If changing from paid to free and there are registrations, reject
@@ -385,7 +386,7 @@ export class EventService {
                 });
 
                 if (registrationCount > 0) {
-                    throw new Error('Cannot change a paid event to free when registrations exist');
+                    throw new ValidationError('Cannot change a paid event to free when registrations exist');
                 }
                 else {
                     // Deactivate tickets
@@ -441,16 +442,16 @@ export class EventService {
 
         // Ownership Check / Admin Bypass
         if (requestingUserRole !== 'ADMIN' && existingEvent.organiserId !== requestingUserId) {
-            throw new Error('You are not authorized to update this event status');
+            throw new AuthorizationError('You are not authorized to update this event status');
         }
 
         // Validate status transition
         if (existingEvent.status === 'COMPLETED') {
-            throw new Error('Cannot change status of a completed event');
+            throw new ValidationError('Cannot change status of a completed event');
         }
 
         if (existingEvent.status === 'CANCELLED' && status !== 'DRAFT') {
-            throw new Error('Cancelled events can only be restored to draft status');
+            throw new ValidationError('Cancelled events can only be restored to draft status');
         }
 
         // 01 - For publishing, verify the event has questions and tickets (if paid)
@@ -461,7 +462,7 @@ export class EventService {
                 where: { eventId }
             });
             if (questionCount === 0) {
-                throw new Error('Events must have at least one question before publishing');
+                throw new ValidationError('Events must have at least one question before publishing');
             }
 
             // For paid events, verify tickets exist
@@ -471,7 +472,7 @@ export class EventService {
                 });
 
                 if (ticketCount === 0) {
-                    throw new Error('Paid events must have at least one ticket type before publishing');
+                    throw new ValidationError('Paid events must have at least one ticket type before publishing');
                 }
             }
         }
@@ -523,12 +524,12 @@ export class EventService {
         const existingEvent = await this.getEventById(eventId);
 
         if (!existingEvent) {
-            throw new Error('Event not found');
+            throw new NotFoundError('Event not found');
         }
 
         // Ownership Check / Admin Bypass
         if (requestingUserRole !== 'ADMIN' && existingEvent.organiserId !== requestingUserId) {
-            throw new Error('You are not authorized to delete this event');
+            throw new AuthorizationError('You are not authorized to delete this event');
         }
 
         // Check for registrations, if any, reject and suggest cancellation
@@ -537,7 +538,7 @@ export class EventService {
         });
 
         if (registrationCount > 0) {
-            throw new Error('Cannot delete an event with registrations. Please cancel the event instead.');
+            throw new ValidationError('Cannot delete an event with registrations. Please cancel the event instead.');
         }
 
         // Delete the event
