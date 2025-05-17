@@ -388,22 +388,9 @@ export class EventService {
                 }
             });
 
-            // 02 - Handle ticket changes if provided and the event is paid
-            // Ticket management is now handled by dedicated Ticket routes and services.
-            // The block for ticket handling in updateEvent has been removed.
 
-            // 03 - Handle question changes if provided
-            // With dedicated EventQuestion routes and services, this complex sync logic
-            // is no longer needed here. Event updates should focus on core event properties.
-            // If eventData.questions is still part of CreateEventDTO for updates,
-            // it might be ignored here, or a simpler update could occur if absolutely necessary,
-            // but primary management should be via /events/:eventId/questions/* endpoints.
-            // For now, we will remove this block.
-            // if (eventData.questions !== undefined) { ... } // Entire block removed.
+            // Ticket and Question management is now handled by dedicated Ticket/EventQuestion routes and services.
 
-            // 04 - Return the updated event with all details
-            // Note: If questions are no longer part of this DTO or are ignored,
-            // getEventWithDetails will still fetch the current state of linked questions.
             return this.getEventWithDetails(eventId); 
         });
     }

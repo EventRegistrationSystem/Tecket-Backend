@@ -108,6 +108,10 @@ This document outlines considerations and recommended actions for refactoring th
 4.  **Global Question Bank Management (Optional Future Enhancement):**
     *   **Consideration:** If admins/organizers need a dedicated UI/API to manage the global `Question` table directly (e.g., `GET /questions`, `POST /questions` to add to bank, `PUT /questions/:id` to edit global question text/type – with care if already used), this would be a separate feature. The "find or create" logic in `EventQuestionService` (when linking) would still apply.
 
+5.  **Add Joi Validation for New Question DTOs:**
+    *   **Status: COMPLETED (2025-05-17).** Joi validation schemas were created in `src/validation/eventQuestionValidation.ts` for `AddEventQuestionLinkDTO` and `UpdateEventQuestionLinkDTO`. These schemas were applied as middleware in `src/routes/eventQuestionRoutes.ts` to validate request bodies for the new granular question management endpoints.
+    *   **Rationale:** Ensures data integrity and provides clear error messages for invalid input to these new APIs.
+
 ### C. Frontend Recommendations for Question Management (`Capstone-Frontend`)
 
 1.  **Standardize `src/api/questionServices.js`:**
