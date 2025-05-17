@@ -37,9 +37,9 @@ app.use('/api/auth', authRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/registrations', registrationRoutes);
-app.use('/api/payments',paymentRoutes);
+// app.use('/api/payments', paymentRoutes);
 
-app.use('/api', ticketRoutes); 
+app.use('/api', ticketRoutes);
 
 
 export default app;
