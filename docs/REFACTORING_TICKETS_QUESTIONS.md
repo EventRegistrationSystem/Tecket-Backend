@@ -156,4 +156,20 @@ The introduction and consistent use of dedicated services/endpoints for Tickets 
     *   **Impact of Dedicated Question Endpoints:** Positive. Question modifications post-creation are now exclusively via `eventQuestionRoutes.ts`. The `PUT /events/:id` endpoint is significantly simplified.
     *   **Recommendation:** For `PUT /events/:id`, the DTO (`Partial<CreateEventDTO>`) might still define `tickets` and `questions` arrays. It should be clearly documented (and enforced in `EventService.updateEvent` if necessary by explicitly ignoring these fields) that these arrays in the `PUT /events/:id` payload are NOT processed for updating ticket/question collections. All such updates must use their dedicated granular endpoints.
 
+## V. Admin Privilege Standardization (Backend) (Date: 2025-05-17)
+
+To ensure ADMIN users have appropriate privileges across modules:
+
+1.  **Standardized Ownership Checks with ADMIN Bypass:**
+    *   **Status: COMPLETED.**
+    *   **Services Updated:**
+        *   `EventService.ts`: Methods `updateEvent`, `updateEventStatus`, `deleteEvent` now accept `requestingUserId` and `requestingUserRole`. They use a helper method (`verifyAdminOrEventOrganizer`) to check if the user is an ADMIN (bypassing ownership) or the event organizer. The `getEventWithDetails` method also correctly handles ADMIN visibility for events of any status.
+        *   `TicketService.ts`: Methods `createTicket`, `updateTicket`, `deleteTicket` now accept `userId` and `userRole`. Authorization checks within these methods correctly bypass ownership for ADMIN users.
+        *   `EventQuestionService.ts`: Methods `addQuestionToEvent`, `updateEventQuestionLink`, `deleteEventQuestionLink` now accept `userId` and `userRole`. They use a helper method (`verifyAdminOrEventOrganizer`) to ensure ADMINs can manage question links for any event.
+    *   **Controllers Updated:**
+        *   `EventController.ts`, `TicketController.ts`, `EventQuestionController.ts` were updated to extract `userId` and `userRole` from `req.user` and pass them to the respective service methods. Redundant ownership checks in controllers were removed.
+    *   **Routes Verified:**
+        *   `eventRoutes.ts`, `ticketRoutes.ts`, `eventQuestionRoutes.ts` correctly apply `authenticate` and `authorize('ORGANIZER', 'ADMIN')` middleware to CUD operations, ensuring only permitted roles can access these actions.
+    *   **Rationale:** This provides a consistent and secure way for ADMIN users to manage all aspects of events, tickets, and question links, while ORGANIZERs are still correctly restricted to their own resources.
+
 This detailed plan should guide the refactoring efforts for both ticket and question management, leading to a more robust, maintainable, and user-friendly system.

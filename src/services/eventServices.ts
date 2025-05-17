@@ -2,8 +2,28 @@ import { prisma } from '../config/prisma';
 import { CreateEventDTO, EventFilters, EventResponse, TicketResponse } from '../types/eventTypes';
 import { JwtPayload } from '../types/authTypes';
 import { NotFoundError, AuthorizationError, ValidationError, EventError } from '../utils/errors';
+import { UserRole } from '@prisma/client'; // Import UserRole
 
 export class EventService {
+
+    private static async verifyAdminOrEventOrganizer(
+        userId: number,
+        userRole: UserRole,
+        eventId: number
+    ): Promise<void> {
+        const event = await prisma.event.findUnique({
+            where: { id: eventId },
+            select: { organiserId: true }
+        });
+
+        if (!event) {
+            throw new NotFoundError('Event not found');
+        }
+
+        if (userRole !== UserRole.ADMIN && event.organiserId !== userId) {
+            throw new AuthorizationError('You are not authorized to perform this action on this event.');
+        }
+    }
 
     /**
      * 01 - Create a new event
@@ -334,20 +354,21 @@ export class EventService {
         eventId: number,
         eventData: Partial<CreateEventDTO>,
         requestingUserId: number,
-        requestingUserRole: string
+        requestingUserRole: UserRole // Changed to UserRole
     ) {
-        // Verify that event exists
-        const existingEvent = await prisma.event.findUnique({
-            where: { id: eventId }
+        await EventService.verifyAdminOrEventOrganizer(requestingUserId, requestingUserRole, eventId);
+
+        // Verify that event exists (already done by helper if not ADMIN, but good for status check)
+        const existingEvent = await prisma.event.findUnique({ // Fetch again for other properties if needed, or pass from helper
+            where: { id: eventId },
+            // Select other fields needed for validation, e.g., status, isFree
+            select: { status: true, isFree: true, endDateTime: true, startDateTime: true } 
         });
 
         if (!existingEvent) {
-            throw new NotFoundError('Event not found');
-        }
-
-        // Ownership Check / Admin Bypass
-        if (requestingUserRole !== 'ADMIN' && existingEvent.organiserId !== requestingUserId) {
-            throw new AuthorizationError('You are not authorized to update this event');
+            // This case should ideally be caught by _ensureAdminOrEventOrganizer if it fetches the event
+            // but as a safeguard or if helper only returns organiserId.
+            throw new NotFoundError('Event not found'); 
         }
 
         // Make sure the event is not completed
@@ -435,14 +456,20 @@ export class EventService {
         eventId: number,
         status: 'DRAFT' | 'PUBLISHED' | 'CANCELLED',
         requestingUserId: number,
-        requestingUserRole: string
+        requestingUserRole: UserRole // Changed to UserRole
     ) {
-        // Verify event exists
-        const existingEvent = await this.getEventById(eventId); // Fetches event for validation
+        await EventService.verifyAdminOrEventOrganizer(requestingUserId, requestingUserRole, eventId);
 
-        // Ownership Check / Admin Bypass
-        if (requestingUserRole !== 'ADMIN' && existingEvent.organiserId !== requestingUserId) {
-            throw new AuthorizationError('You are not authorized to update this event status');
+        // Fetch event again if other properties like isFree or current status are needed for validation logic
+        // The verifyAdminOrEventOrganizer only confirms existence and ownership/admin role.
+        const existingEvent = await prisma.event.findUnique({
+            where: { id: eventId },
+            select: { status: true, isFree: true, organiserId: true } // Ensure all needed fields are here
+        });
+
+        if (!existingEvent) {
+            // Should be caught by verifyAdminOrEventOrganizer if it checks existence properly for ADMINs too
+            throw new NotFoundError('Event not found after authorization check.'); 
         }
 
         // Validate status transition
@@ -518,19 +545,13 @@ export class EventService {
     static async deleteEvent(
         eventId: number,
         requestingUserId: number,
-        requestingUserRole: string
+        requestingUserRole: UserRole // Changed to UserRole
     ) {
-        // Verify event exists
-        const existingEvent = await this.getEventById(eventId);
+        await EventService.verifyAdminOrEventOrganizer(requestingUserId, requestingUserRole, eventId);
 
-        if (!existingEvent) {
-            throw new NotFoundError('Event not found');
-        }
-
-        // Ownership Check / Admin Bypass
-        if (requestingUserRole !== 'ADMIN' && existingEvent.organiserId !== requestingUserId) {
-            throw new AuthorizationError('You are not authorized to delete this event');
-        }
+        // No need to fetch existingEvent again if verifyAdminOrEventOrganizer confirms existence
+        // However, the original deleteEvent used getEventById which might fetch more than just organiserId
+        // For deletion, only existence and authorization matter, which the helper covers.
 
         // Check for registrations, if any, reject and suggest cancellation
         const registrationCount = await prisma.registration.count({

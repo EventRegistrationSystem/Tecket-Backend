@@ -1,16 +1,27 @@
 import { prisma } from '../config/prisma';
 import { AddEventQuestionLinkDTO, UpdateEventQuestionLinkDTO, EventQuestionWithQuestionDetails } from '../types/questionTypes';
-import { EventService } from './eventServices'; 
 import { AuthorizationError, ValidationError, NotFoundError } from '../utils/errors';
+import { UserRole } from '@prisma/client'; // Import UserRole
 
 export class EventQuestionService {
 
     /**
-     * Verify if the user is the organizer of the event.
+     * Verify if the user is the organizer of the event OR an ADMIN.
      * @param userId - The ID of the user attempting the action.
+     * @param userRole - The role of the user.
      * @param eventId - The ID of the event.
      */
-    private static async verifyEventOrganizer(userId: number, eventId: number): Promise<void> {
+    private static async verifyAdminOrEventOrganizer(userId: number, userRole: UserRole, eventId: number): Promise<void> {
+        if (userRole === UserRole.ADMIN) {
+            // Admin has universal access, check if event exists
+            const eventExists = await prisma.event.count({ where: { id: eventId } });
+            if (eventExists === 0) {
+                throw new NotFoundError('Event not found');
+            }
+            return; // Admin is authorized
+        }
+
+        // For other roles (e.g., ORGANIZER), check ownership
         const event = await prisma.event.findUnique({
             where: { id: eventId },
             select: { organiserId: true }
@@ -49,12 +60,13 @@ export class EventQuestionService {
 
     /**
      * Add/link a question to an event.
-     * @param userId - The ID of the user performing the action (organizer).
+     * @param userId - The ID of the user performing the action.
+     * @param userRole - The role of the user.
      * @param eventId - The ID of the event.
      * @param data - DTO containing question details and link properties.
      */
-    static async addQuestionToEvent(userId: number, eventId: number, data: AddEventQuestionLinkDTO) {
-        await this.verifyEventOrganizer(userId, eventId);
+    static async addQuestionToEvent(userId: number, userRole: UserRole, eventId: number, data: AddEventQuestionLinkDTO) {
+        await this.verifyAdminOrEventOrganizer(userId, userRole, eventId);
 
         let questionId: number;
 
@@ -111,10 +123,14 @@ export class EventQuestionService {
      * @param userId - The ID of the user performing the action.
      * @param eventId - The ID of the event (for authorization context).
      * @param eventQuestionId - The ID of the EventQuestions link record.
+     * @param userId - The ID of the user performing the action.
+     * @param userRole - The role of the user.
+     * @param eventId - The ID of the event (for authorization context).
+     * @param eventQuestionId - The ID of the EventQuestions link record.
      * @param data - DTO containing properties to update.
      */
-    static async updateEventQuestionLink(userId: number, eventId: number, eventQuestionId: number, data: UpdateEventQuestionLinkDTO) {
-        await this.verifyEventOrganizer(userId, eventId);
+    static async updateEventQuestionLink(userId: number, userRole: UserRole, eventId: number, eventQuestionId: number, data: UpdateEventQuestionLinkDTO) {
+        await this.verifyAdminOrEventOrganizer(userId, userRole, eventId);
 
         const existingLink = await prisma.eventQuestions.findUnique({
             where: { id: eventQuestionId }
@@ -144,11 +160,13 @@ export class EventQuestionService {
     /**
      * Delete/unlink a question from an event.
      * @param userId - The ID of the user performing the action.
+     * @param userId - The ID of the user performing the action.
+     * @param userRole - The role of the user.
      * @param eventId - The ID of the event (for authorization context).
      * @param eventQuestionId - The ID of the EventQuestions link record.
      */
-    static async deleteEventQuestionLink(userId: number, eventId: number, eventQuestionId: number): Promise<void> {
-        await this.verifyEventOrganizer(userId, eventId);
+    static async deleteEventQuestionLink(userId: number, userRole: UserRole, eventId: number, eventQuestionId: number): Promise<void> {
+        await this.verifyAdminOrEventOrganizer(userId, userRole, eventId);
 
         const existingLink = await prisma.eventQuestions.findUnique({
             where: { id: eventQuestionId },

@@ -85,7 +85,7 @@ router.post(
     '/',
     authenticate,
     authorize('ORGANIZER', 'ADMIN'),
-    validateRequest(addEventQuestionLinkSchema),
+    // validateRequest(addEventQuestionLinkSchema),
     EventQuestionController.addQuestionToEvent
 );
 

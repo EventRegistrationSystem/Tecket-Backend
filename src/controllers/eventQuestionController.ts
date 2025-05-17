@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { EventQuestionService } from '../services/eventQuestionService';
 import { AddEventQuestionLinkDTO, UpdateEventQuestionLinkDTO } from '../types/questionTypes';
 import { AuthorizationError, NotFoundError, ValidationError } from '../utils/errors';
+import { UserRole } from '@prisma/client'; // Import UserRole
 
 export class EventQuestionController {
 
@@ -37,18 +38,19 @@ export class EventQuestionController {
         try {
             const eventId = parseInt(req.params.eventId);
             const userId = req.user?.userId;
+            const userRole = req.user?.role as UserRole; // Extract and cast userRole
 
             if (isNaN(eventId)) {
                 res.status(400).json({ success: false, message: 'Invalid event ID.' });
                 return;
             }
-            if (!userId) {
+            if (!userId || !userRole) { // Check for userRole as well
                 res.status(401).json({ success: false, message: 'Authentication required.' });
                 return;
             }
 
             const dto: AddEventQuestionLinkDTO = req.body;
-            const newEventQuestion = await EventQuestionService.addQuestionToEvent(userId, eventId, dto);
+            const newEventQuestion = await EventQuestionService.addQuestionToEvent(userId, userRole, eventId, dto); // Pass userRole
             res.status(201).json({ success: true, data: newEventQuestion, message: 'Question linked to event successfully.' });
         } catch (error) {
             console.error('Error in EventQuestionController.addQuestionToEvent:', error);
@@ -73,18 +75,19 @@ export class EventQuestionController {
             const eventId = parseInt(req.params.eventId);
             const eventQuestionId = parseInt(req.params.eventQuestionId);
             const userId = req.user?.userId;
+            const userRole = req.user?.role as UserRole; // Extract and cast userRole
 
             if (isNaN(eventId) || isNaN(eventQuestionId)) {
                 res.status(400).json({ success: false, message: 'Invalid event ID or event question ID.' });
                 return;
             }
-            if (!userId) {
+            if (!userId || !userRole) { // Check for userRole as well
                 res.status(401).json({ success: false, message: 'Authentication required.' });
                 return;
             }
 
             const dto: UpdateEventQuestionLinkDTO = req.body;
-            const updatedLink = await EventQuestionService.updateEventQuestionLink(userId, eventId, eventQuestionId, dto);
+            const updatedLink = await EventQuestionService.updateEventQuestionLink(userId, userRole, eventId, eventQuestionId, dto); // Pass userRole
             res.status(200).json({ success: true, data: updatedLink, message: 'Event question link updated successfully.' });
         } catch (error) {
             console.error('Error in EventQuestionController.updateEventQuestionLink:', error);
@@ -109,17 +112,18 @@ export class EventQuestionController {
             const eventId = parseInt(req.params.eventId);
             const eventQuestionId = parseInt(req.params.eventQuestionId);
             const userId = req.user?.userId;
+            const userRole = req.user?.role as UserRole; // Extract and cast userRole
 
             if (isNaN(eventId) || isNaN(eventQuestionId)) {
                 res.status(400).json({ success: false, message: 'Invalid event ID or event question ID.' });
                 return;
             }
-            if (!userId) {
+            if (!userId || !userRole) { // Check for userRole as well
                 res.status(401).json({ success: false, message: 'Authentication required.' });
                 return;
             }
 
-            await EventQuestionService.deleteEventQuestionLink(userId, eventId, eventQuestionId);
+            await EventQuestionService.deleteEventQuestionLink(userId, userRole, eventId, eventQuestionId); // Pass userRole
             res.status(200).json({ success: true, message: 'Event question link deleted successfully.' });
         } catch (error) {
             console.error('Error in EventQuestionController.deleteEventQuestionLink:', error);

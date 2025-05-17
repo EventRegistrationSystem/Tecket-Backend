@@ -2,7 +2,8 @@
 import { Request, Response } from 'express';
 import { TicketService } from '../services/ticketServices';
 import { CreateTicketDTO, UpdateTicketDTO } from '../types/ticketTypes';
-import { ValidationError, AuthorizationError, NotFoundError } from '../utils/errors'; // Import NotFoundError
+import { ValidationError, AuthorizationError, NotFoundError } from '../utils/errors';
+import { UserRole } from '@prisma/client'; // Import UserRole
 
 export class TicketController {
     /**
@@ -11,22 +12,21 @@ export class TicketController {
     static async createTicket(req: Request, res: Response): Promise<void> {
         try {
             const eventId = parseInt(req.params.eventId);
-            const userId = req.user?.userId; // Get authenticated user ID for potential service-level check
+            const userId = req.user?.userId;
+            const userRole = req.user?.role as UserRole; // Extract and cast userRole
 
             if (isNaN(eventId)) {
                 res.status(400).json({ success: false, message: 'Invalid event ID' });
                 return;
             }
-            if (!userId) {
-                // Should be caught by middleware, but belts and suspenders
+            if (!userId || !userRole) { // Check for userRole as well
                 res.status(401).json({ success: false, message: 'Authentication required' });
                 return;
             }
 
             const ticketData: CreateTicketDTO = { ...req.body, eventId };
 
-            // Pass userId to createTicket for ownership check
-            const ticket = await TicketService.createTicket(userId, eventId, ticketData);
+            const ticket = await TicketService.createTicket(userId, userRole, eventId, ticketData); // Pass userRole
 
             res.status(201).json({ success: true, data: ticket });
         }
@@ -55,24 +55,23 @@ export class TicketController {
         try {
             // Read both eventId and ticketId from params
             const ticketId = parseInt(req.params.ticketId);
-            const eventId = parseInt(req.params.eventId); // Read eventId for context
-            const userId = req.user?.userId; // Get authenticated user ID
+            const eventId = parseInt(req.params.eventId); 
+            const userId = req.user?.userId;
+            const userRole = req.user?.role as UserRole; // Extract and cast userRole
 
             if (isNaN(ticketId) || isNaN(eventId)) {
                 res.status(400).json({ success: false, message: 'Invalid event or ticket ID' });
                 return;
             }
 
-            // Ensure user is authenticated
-            if (!userId) {
+            if (!userId || !userRole) { // Check for userRole as well
                 res.status(401).json({ success: false, message: 'Authentication required' });
                 return;
             }
 
             const ticketData: UpdateTicketDTO = req.body;
 
-            // Pass userId to service for ownership check (Service method signature needs update)
-            const ticket = await TicketService.updateTicket(userId, ticketId, ticketData);
+            const ticket = await TicketService.updateTicket(userId, userRole, ticketId, ticketData); // Pass userRole correctly
 
             res.status(200).json({ success: true, data: ticket });
         }
@@ -99,24 +98,22 @@ export class TicketController {
      */
     static async deleteTicket(req: Request, res: Response): Promise<void> {
         try {
-            // Read both eventId and ticketId from params
             const ticketId = parseInt(req.params.ticketId);
-            const eventId = parseInt(req.params.eventId); // Read eventId for context
-            const userId = req.user?.userId; // Get authenticated user ID
+            const eventId = parseInt(req.params.eventId);
+            const userId = req.user?.userId;
+            const userRole = req.user?.role as UserRole; // Extract and cast userRole
 
             if (isNaN(ticketId) || isNaN(eventId)) {
                 res.status(400).json({ success: false, message: 'Invalid event or ticket ID' });
                 return;
             }
 
-            // Ensure user is authenticated
-            if (!userId) {
+            if (!userId || !userRole) { // Check for userRole as well
                 res.status(401).json({ success: false, message: 'Authentication required' });
                 return;
             }
 
-            // Pass userId to service for ownership check (Service method signature needs update)
-            await TicketService.deleteTicket(userId, ticketId);
+            await TicketService.deleteTicket(userId, userRole, ticketId); // Pass userRole
 
             res.status(200).json({ success: true, message: 'Ticket deleted successfully' });
         }

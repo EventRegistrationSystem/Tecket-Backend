@@ -1,6 +1,6 @@
 import {Request, Response, NextFunction} from 'express';
 import jwt from 'jsonwebtoken';
-import { AuthenticationError } from '../utils/errors';
+import { AuthenticationError, ValidationError } from '../utils/errors';
 import { JwtPayload } from '../types/authTypes';
 import { Schema } from 'joi';
 
@@ -23,9 +23,6 @@ export const authenticate = (req: Request, res: Response, next: NextFunction) =>
         if (!decoded.userId) {
             throw new AuthenticationError('Invalid token format');
         }
-
-        
-
         next();
     }
     catch (error) {
@@ -91,7 +88,7 @@ export const validateRequest = (schema: Schema) => {
         const { error } = schema.validate(req.body);
 
         if (error) {
-            return next(new AuthenticationError(error.details[0].message));
+            return next(new ValidationError(error.details[0].message));
         }
 
         next(); 

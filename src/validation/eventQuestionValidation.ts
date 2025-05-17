@@ -1,5 +1,5 @@
 import Joi from 'joi';
-import { QuestionType } from '@prisma/client'; // Assuming QuestionType enum is available
+import { QuestionType } from '@prisma/client';
 
 // Get QuestionType enum values for Joi validation
 const questionTypeEnumValues = Object.values(QuestionType);
