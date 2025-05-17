@@ -2,7 +2,7 @@
 import { Request, Response } from 'express';
 import { TicketService } from '../services/ticketServices';
 import { CreateTicketDTO, UpdateTicketDTO } from '../types/ticketTypes';
-import { ValidationError, AuthorizationError } from '../utils/errors'; // Assuming AuthorizationError exists or will be created
+import { ValidationError, AuthorizationError, NotFoundError } from '../utils/errors'; // Import NotFoundError
 
 export class TicketController {
     /**
@@ -18,7 +18,7 @@ export class TicketController {
                 return;
             }
             if (!userId) {
-                 // Should be caught by middleware, but belts and suspenders
+                // Should be caught by middleware, but belts and suspenders
                 res.status(401).json({ success: false, message: 'Authentication required' });
                 return;
             }
@@ -30,13 +30,21 @@ export class TicketController {
 
             res.status(201).json({ success: true, data: ticket });
         }
-        catch (error) {
+        catch (error: any) {
             console.error('Error creating ticket:', error);
-            const statusCode = error instanceof ValidationError ? 400 : error instanceof AuthorizationError ? 403 : 500;
-            res.status(statusCode).json({
-                success: false,
-                message: error instanceof Error ? error.message : 'Unknown error'
-            });
+            if (error instanceof NotFoundError) {
+                res.status(404).json({ success: false, message: error.message });
+            } else if (error instanceof AuthorizationError) {
+                res.status(403).json({ success: false, message: error.message });
+            } else if (error instanceof ValidationError) {
+                res.status(400).json({ success: false, message: error.message });
+            }
+            else {
+                res.status(500).json({
+                    success: false,
+                    message: 'An unexpected error occurred while creating the ticket.'
+                });
+            }
         }
     }
 
@@ -68,13 +76,21 @@ export class TicketController {
 
             res.status(200).json({ success: true, data: ticket });
         }
-        catch (error) {
+        catch (error: any) {
             console.error('Error updating ticket:', error);
-            const statusCode = error instanceof ValidationError ? 400 : error instanceof AuthorizationError ? 403 : 500;
-            res.status(statusCode).json({
-                success: false,
-                message: error instanceof Error ? error.message : 'Unknown error'
-            });
+            if (error instanceof NotFoundError) {
+                res.status(404).json({ success: false, message: error.message });
+            } else if (error instanceof AuthorizationError) {
+                res.status(403).json({ success: false, message: error.message });
+            } else if (error instanceof ValidationError) {
+                res.status(400).json({ success: false, message: error.message });
+            }
+            else {
+                res.status(500).json({
+                    success: false,
+                    message: 'An unexpected error occurred while updating the ticket.'
+                });
+            }
         }
     }
 
@@ -89,7 +105,7 @@ export class TicketController {
             const userId = req.user?.userId; // Get authenticated user ID
 
             if (isNaN(ticketId) || isNaN(eventId)) {
-                 res.status(400).json({ success: false, message: 'Invalid event or ticket ID' });
+                res.status(400).json({ success: false, message: 'Invalid event or ticket ID' });
                 return;
             }
 
@@ -104,13 +120,21 @@ export class TicketController {
 
             res.status(200).json({ success: true, message: 'Ticket deleted successfully' });
         }
-        catch (error) {
+        catch (error: any) {
             console.error('Error deleting ticket:', error);
-            const statusCode = error instanceof ValidationError ? 400 : error instanceof AuthorizationError ? 403 : 500;
-            res.status(statusCode).json({
-                success: false,
-                message: error instanceof Error ? error.message : 'Unknown error'
-            });
+            if (error instanceof NotFoundError) {
+                res.status(404).json({ success: false, message: error.message });
+            } else if (error instanceof AuthorizationError) {
+                res.status(403).json({ success: false, message: error.message });
+            } else if (error instanceof ValidationError) {
+                res.status(400).json({ success: false, message: error.message });
+            }
+            else {
+                res.status(500).json({
+                    success: false,
+                    message: 'An unexpected error occurred while deleting the ticket.'
+                });
+            }
         }
     }
 
@@ -130,13 +154,19 @@ export class TicketController {
 
             res.status(200).json({ success: true, data: tickets });
         }
-        catch (error) {
+        catch (error: any) {
             console.error('Error getting tickets:', error);
-            const statusCode = error instanceof ValidationError ? 400 : 500;
-            res.status(statusCode).json({
-                success: false,
-                message: error instanceof Error ? error.message : 'Unknown error'
-            });
+            if (error instanceof NotFoundError) { // Service throws NotFoundError if event not found
+                res.status(404).json({ success: false, message: error.message });
+            } else if (error instanceof ValidationError) {
+                res.status(400).json({ success: false, message: error.message });
+            }
+            else {
+                res.status(500).json({
+                    success: false,
+                    message: 'An unexpected error occurred while retrieving tickets.'
+                });
+            }
         }
     }
 
@@ -147,10 +177,10 @@ export class TicketController {
         try {
             // Read ticketId from params (eventId is available but not needed by current service method)
             const ticketId = parseInt(req.params.ticketId);
-             const eventId = parseInt(req.params.eventId); // Read eventId for context
+            const eventId = parseInt(req.params.eventId); // Read eventId for context
 
             if (isNaN(ticketId) || isNaN(eventId)) {
-                 res.status(400).json({ success: false, message: 'Invalid event or ticket ID' });
+                res.status(400).json({ success: false, message: 'Invalid event or ticket ID' });
                 return;
             }
 
@@ -161,13 +191,19 @@ export class TicketController {
 
             res.status(200).json({ success: true, data: ticket });
         }
-        catch (error) {
+        catch (error: any) {
             console.error('Error getting ticket:', error);
-            const statusCode = error instanceof ValidationError ? 400 : 500;
-            res.status(statusCode).json({
-                success: false,
-                message: error instanceof Error ? error.message : 'Unknown error'
-            });
+            if (error instanceof NotFoundError) { // Service throws NotFoundError if ticket not found
+                res.status(404).json({ success: false, message: error.message });
+            } else if (error instanceof ValidationError) { // Should not happen if ID is validated, but as a fallback
+                res.status(400).json({ success: false, message: error.message });
+            }
+            else {
+                res.status(500).json({
+                    success: false,
+                    message: 'An unexpected error occurred while retrieving the ticket.'
+                });
+            }
         }
     }
 
@@ -181,23 +217,29 @@ export class TicketController {
             const eventId = parseInt(req.params.eventId); // Read eventId for context
 
             if (isNaN(ticketId) || isNaN(eventId)) {
-                 res.status(400).json({ success: false, message: 'Invalid event or ticket ID' });
+                res.status(400).json({ success: false, message: 'Invalid event or ticket ID' });
                 return;
             }
 
-             // Optional: Could add check here to ensure ticket belongs to eventId before calling service
+            // Optional: Could add check here to ensure ticket belongs to eventId before calling service
 
             const availability = await TicketService.checkAvailability(ticketId);
 
             res.status(200).json({ success: true, data: availability });
         }
-        catch (error) {
+        catch (error: any) {
             console.error('Error checking ticket availability:', error);
-            const statusCode = error instanceof ValidationError ? 400 : 500;
-            res.status(statusCode).json({
-                success: false,
-                message: error instanceof Error ? error.message : 'Unknown error'
-            });
+            if (error instanceof NotFoundError) { // Service throws NotFoundError if ticket not found
+                res.status(404).json({ success: false, message: error.message });
+            } else if (error instanceof ValidationError) {
+                res.status(400).json({ success: false, message: error.message });
+            }
+            else {
+                res.status(500).json({
+                    success: false,
+                    message: 'An unexpected error occurred while checking ticket availability.'
+                });
+            }
         }
     }
 }

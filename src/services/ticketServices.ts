@@ -1,6 +1,6 @@
 import { prisma } from '../config/prisma';
 import { Ticket } from '@prisma/client';
-import { ValidationError, AuthorizationError } from '../utils/errors'; // Import AuthorizationError
+import { ValidationError, AuthorizationError, NotFoundError } from '../utils/errors'; // Import NotFoundError
 import { CreateTicketDTO, UpdateTicketDTO } from '../types/ticketTypes';
 
 export class TicketService {
@@ -18,7 +18,7 @@ export class TicketService {
         });
 
         if (!event) {
-            throw new ValidationError('Event not found');
+            throw new NotFoundError('Event not found');
         }
 
         // Authorization Check: Ensure the user owns the event
@@ -70,7 +70,7 @@ export class TicketService {
         });
 
         if (!ticket) {
-            throw new ValidationError('Ticket not found');
+            throw new NotFoundError('Ticket not found');
         }
 
         // Authorization Check: Ensure the user owns the event
@@ -85,7 +85,7 @@ export class TicketService {
         const newSalesEnd = ticketData.salesEnd ? new Date(ticketData.salesEnd) : currentSalesEnd;
 
         if (newSalesStart && newSalesEnd && newSalesEnd <= newSalesStart) {
-             throw new ValidationError('Sales end date must be after sales start date');
+            throw new ValidationError('Sales end date must be after sales start date');
         }
 
         // Validate event end date
@@ -131,7 +131,7 @@ export class TicketService {
         });
 
         if (!ticket) {
-            throw new ValidationError('Ticket not found');
+            throw new NotFoundError('Ticket not found');
         }
 
         // Authorization Check: Ensure the user owns the event
@@ -154,10 +154,10 @@ export class TicketService {
      * Get tickets for an event
      */
     static async getTicketsByEvent(eventId: number): Promise<Ticket[]> {
-        // Verify the event exists (optional, could rely on FK constraints or route validation)
+        // Verify the event exists
         const eventExists = await prisma.event.count({ where: { id: eventId } });
         if (eventExists === 0) {
-             throw new ValidationError('Event not found');
+            throw new NotFoundError('Event not found');
         }
 
 
@@ -180,7 +180,7 @@ export class TicketService {
         });
 
         if (!ticket) {
-            throw new ValidationError('Ticket not found');
+            throw new NotFoundError('Ticket not found');
         }
 
         return ticket;
@@ -200,7 +200,7 @@ export class TicketService {
         });
 
         if (!ticket) {
-            throw new ValidationError('Ticket not found');
+            throw new NotFoundError('Ticket not found');
         }
 
         const now = new Date();
