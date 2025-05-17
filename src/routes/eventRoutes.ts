@@ -176,6 +176,7 @@ router.get('/:id', EventController.getEventById);
  */
 router.post('/',
     authenticate,
+    authorize('ORGANIZER', 'ADMIN'), // Added authorization
     validateRequest(createEventSchema),
     EventController.createEvent);
 
