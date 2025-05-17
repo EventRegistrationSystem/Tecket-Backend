@@ -449,33 +449,36 @@ export class EventService {
                 const existingDbTickets = await tx.ticket.findMany({ where: { eventId: eventId } });
                 for (const dbTicket of existingDbTickets) {
                     try {
-                        // TicketService.deleteTicket will handle rules like not deleting sold tickets
-                        // It needs to be adapted to work with the transaction 'tx' or this won't be atomic.
-                        // For now, we assume it can be called directly. If not, its logic needs to be inlined or adapted.
-                        await TicketService.deleteTicket(requestingUserId, requestingUserRole, dbTicket.id, tx); // Pass tx if service adapted
+                        // TicketService.deleteTicket will handle rules like not deleting sold tickets, with tx passed        
+                        await TicketService.deleteTicket(requestingUserId, requestingUserRole, dbTicket.id, tx); 
                     } catch (error) {
                         // Log or handle error if a specific ticket cannot be deleted (e.g., sold tickets)
+
                         // This might mean the overall update strategy needs to be more nuanced than "delete all then create all"
                         // if some tickets cannot be deleted.
+                        
                         console.warn(`Could not delete ticket ${dbTicket.id} during event update: ${error instanceof Error ? error.message : error}`);
+
+                        // Throw an error
+                        // throw new EventError(`Could not delete ticket ${dbTicket.id}: ${error instanceof Error ? error.message : error}`);
                     }
                 }
 
                 // Create new tickets from the payload
                 if (eventData.tickets && !updatedEvent.isFree) { // updatedEventData is from tx.event.update
                     for (const incomingTicket of eventData.tickets) {
-                        // TicketService.createTicket needs to be adapted for 'tx' or its logic inlined.
+                    
                         // It also needs the event's endDateTime for validation, which updatedEventData would have.
                         await TicketService.createTicket(requestingUserId, requestingUserRole, eventId, {
-                            eventId: eventId, // Add eventId to satisfy CreateTicketDTO
+                            eventId: eventId, 
                             name: incomingTicket.name,
                             description: incomingTicket.description,
                             price: incomingTicket.price,
                             quantityTotal: incomingTicket.quantityTotal,
-                            salesStart: new Date(incomingTicket.salesStart), // Ensure these are Date objects
+                            salesStart: new Date(incomingTicket.salesStart), 
                             salesEnd: new Date(incomingTicket.salesEnd),
                             // status will be defaulted by TicketService.createTicket if not provided
-                        }, tx); // Pass tx
+                        }, tx); 
                     }
                 }
             }
@@ -483,7 +486,6 @@ export class EventService {
             // --- Question Synchronization (Monolithic: Delete existing links then create from payload) ---
             if (eventData.questions !== undefined) {
                 // Delete all existing EventQuestion links for this event
-                // EventQuestionService.deleteEventQuestionLink needs to be adapted for 'tx' or its logic inlined.
                 // It also has rules about not deleting if responses exist.
                 const existingEventQuestionLinks = await tx.eventQuestions.findMany({ where: { eventId: eventId } });
                 for (const link of existingEventQuestionLinks) {
@@ -497,13 +499,12 @@ export class EventService {
                 // Create new EventQuestion links from the payload
                 if (eventData.questions) {
                     for (const incomingQuestion of eventData.questions) {
-                        // EventQuestionService.addQuestionToEvent needs to be adapted for 'tx' or its logic inlined.
                         await EventQuestionService.addQuestionToEvent(requestingUserId, requestingUserRole, eventId, {
                             questionText: incomingQuestion.questionText,
                             isRequired: incomingQuestion.isRequired,
                             displayOrder: incomingQuestion.displayOrder,
-                            // questionType, category, validationRules are omitted for simplicity
-                        }, tx); // Pass tx
+                            // questionType, category, validationRules are set to default, hence omitted for simplicity
+                        }, tx); 
                     }
                 }
             }
