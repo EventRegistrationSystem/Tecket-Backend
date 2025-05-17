@@ -1,5 +1,6 @@
 import { prisma } from '../config/prisma';
 import { CreateEventDTO, EventFilters, EventResponse, TicketResponse } from '../types/eventTypes';
+import { JwtPayload } from '../types/authTypes'; // Assuming JwtPayload is suitable for req.user
 
 export class EventService {
 
@@ -148,8 +149,8 @@ export class EventService {
         }
 
         // Handle admin view - admins can see all events in all statuses
-        if (filters.isAdmin && filters.adminView === true) {
-            console.log('Admin view enabled, removing status filter');
+        if (filters.isAdmin) { // adminView flag is removed, isAdmin is sufficient
+            console.log('Admin view: removing status filter to show all statuses');
             delete where.status; // Remove the status filter for admin view
         }
         // Handle organizer view - organizers can see their own events in all statuses
@@ -265,10 +266,11 @@ export class EventService {
 
     /**
      * 04 - Get event with details
-     * @param eventId 
+     * @param eventId
+     * @param requestingUser
      * @returns 
      */
-    static async getEventWithDetails(eventId: number) {
+    static async getEventWithDetails(eventId: number, requestingUser?: JwtPayload) {
         const event = await prisma.event.findUnique({
             where: { id: eventId },
             include: {
@@ -302,16 +304,37 @@ export class EventService {
             throw new Error('Event not found');
         }
 
+        // Visibility Check
+        if (event.status !== 'PUBLISHED') {
+            if (!requestingUser) { // Unauthenticated
+                throw new Error('Access denied to this event'); // Or 'Event not found' to not reveal its existence
+            }
+            if (requestingUser.role === 'PARTICIPANT') {
+                throw new Error('Access denied to this event');
+            }
+            if (requestingUser.role === 'ORGANIZER' && event.organiserId !== requestingUser.userId) {
+                throw new Error('Access denied to this event');
+            }
+            // ADMINs can see any status, so no explicit check needed here for them.
+        }
+
         return event;
     }
 
     /**
      * 05 - Update event
      * @param eventId 
-     * @param eventData 
+     * @param eventData
+     * @param requestingUserId
+     * @param requestingUserRole
      * @returns 
      */
-    static async updateEvent(eventId: number, eventData: Partial<CreateEventDTO>) {
+    static async updateEvent(
+        eventId: number,
+        eventData: Partial<CreateEventDTO>,
+        requestingUserId: number,
+        requestingUserRole: string
+    ) {
         // Verify that event exists
         const existingEvent = await prisma.event.findUnique({
             where: { id: eventId }
@@ -319,6 +342,11 @@ export class EventService {
 
         if (!existingEvent) {
             throw new Error('Event not found');
+        }
+
+        // Ownership Check / Admin Bypass
+        if (requestingUserRole !== 'ADMIN' && existingEvent.organiserId !== requestingUserId) {
+            throw new Error('You are not authorized to update this event');
         }
 
         // Make sure the event is not completed
@@ -391,7 +419,7 @@ export class EventService {
 
             // Ticket and Question management is now handled by dedicated Ticket/EventQuestion routes and services.
 
-            return this.getEventWithDetails(eventId); 
+            return this.getEventWithDetails(eventId);
         });
     }
 
@@ -399,11 +427,22 @@ export class EventService {
      * 05 - Update event status
      * @param eventId
      * @param status
+     * @param requestingUserId
+     * @param requestingUserRole
      */
-    static async updateEventStatus(eventId: number, status: 'DRAFT' | 'PUBLISHED' | 'CANCELLED') {
-
+    static async updateEventStatus(
+        eventId: number,
+        status: 'DRAFT' | 'PUBLISHED' | 'CANCELLED',
+        requestingUserId: number,
+        requestingUserRole: string
+    ) {
         // Verify event exists
-        const existingEvent = await this.getEventById(eventId);
+        const existingEvent = await this.getEventById(eventId); // Fetches event for validation
+
+        // Ownership Check / Admin Bypass
+        if (requestingUserRole !== 'ADMIN' && existingEvent.organiserId !== requestingUserId) {
+            throw new Error('You are not authorized to update this event status');
+        }
 
         // Validate status transition
         if (existingEvent.status === 'COMPLETED') {
@@ -470,15 +509,26 @@ export class EventService {
 
     /**
      * 06 - Delete an event
-     * @param eventId 
+     * @param eventId
+     * @param requestingUserId
+     * @param requestingUserRole
      * @returns 
      */
-    static async deleteEvent(eventId: number) {
+    static async deleteEvent(
+        eventId: number,
+        requestingUserId: number,
+        requestingUserRole: string
+    ) {
         // Verify event exists
         const existingEvent = await this.getEventById(eventId);
 
         if (!existingEvent) {
             throw new Error('Event not found');
+        }
+
+        // Ownership Check / Admin Bypass
+        if (requestingUserRole !== 'ADMIN' && existingEvent.organiserId !== requestingUserId) {
+            throw new Error('You are not authorized to delete this event');
         }
 
         // Check for registrations, if any, reject and suggest cancellation

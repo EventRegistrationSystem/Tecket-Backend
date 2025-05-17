@@ -85,7 +85,7 @@ export class EventController {
                 if (req.user.role === 'ADMIN') {
                     console.log('User is an admin');
                     filters.isAdmin = true;
-                    filters.adminView = req.query.adminView === 'true'; // Admin view toggle - only when explicitly requested
+                    // Admin view toggle removed - admin sees all by default if isAdmin is true
                 }
                 else if (req.user.role === 'ORGANIZER') {
                     console.log('User is an organizer');
@@ -134,6 +134,7 @@ export class EventController {
     static async getEventById(req: Request, res: Response): Promise<void> {
         try {
             const eventId = Number(req.params.id);
+            const requestingUser = req.user; // Get the user object, which might be undefined
 
             // Validate event ID
             if (isNaN(eventId)) {
@@ -144,21 +145,27 @@ export class EventController {
                 return;
             }
 
-            const event = await EventService.getEventWithDetails(eventId);
+            const event = await EventService.getEventWithDetails(eventId, requestingUser);
 
             res.status(200).json({
                 success: true,
                 data: event
             });
         }
-        catch (error) {
+        catch (error: any) { // Catch any error
             console.error('Error getting event:', error);
-
-            res.status(500).json({
-                success: false,
-                message: 'Internal server error',
-                error: error instanceof Error ? error.message : 'Unknown error'
-            });
+            if (error.message === 'Event not found') {
+                res.status(404).json({ success: false, message: error.message });
+            } else if (error.message === 'Access denied to this event') { // Custom message from service
+                res.status(403).json({ success: false, message: error.message });
+            }
+            else {
+                res.status(500).json({
+                    success: false,
+                    message: 'Internal server error',
+                    error: error.message || 'Unknown error'
+                });
+            }
         }
     }
 
@@ -172,42 +179,43 @@ export class EventController {
         try {
             const eventId = Number(req.params.id);
             const userId = req.user?.userId;
+            const userRole = req.user?.role;
 
             if (isNaN(eventId)) {
                 res.status(400).json({
                     success: false,
                     message: 'Invalid event ID'
                 });
+                return; // Return early
             }
 
-            //Verify ownership if not admin
-            if (req.user?.role !== 'ADMIN') {
-                const event = await EventService.getEventById(eventId);
-
-                if (event.organiserId !== userId) {
-                    res.status(403).json({
-                        success: false,
-                        message: 'You are not authorized to update this event'
-                    });
-                }
+            if (!userId || !userRole) {
+                res.status(401).json({ success: false, message: 'Authentication required' });
+                return;
             }
 
+            // Ownership check moved to service layer
             // Update event
-            const event = await EventService.updateEvent(eventId, req.body);
+            const event = await EventService.updateEvent(eventId, req.body, userId, userRole);
 
             res.status(200).json({
                 success: true,
                 data: event
             });
         }
-        catch (error) {
+        catch (error: any) { // Catch any error
             console.error('Error updating event:', error);
-
-            res.status(500).json({
-                success: false,
-                message: 'Error updating event',
-                error: error instanceof Error ? error.message : 'Unknown error'
-            })
+            if (error.message === 'Event not found') { // Example of specific error handling
+                res.status(404).json({ success: false, message: error.message });
+            } else if (error.message === 'You are not authorized to update this event') {
+                res.status(403).json({ success: false, message: error.message });
+            } else {
+                res.status(500).json({
+                    success: false,
+                    message: 'Error updating event',
+                    error: error.message || 'Unknown error'
+                });
+            }
         }
     }
 
@@ -222,24 +230,19 @@ export class EventController {
             const eventId = Number(req.params.id);
             const status = req.body.status;
             const userId = req.user?.userId;
+            const userRole = req.user?.role;
 
             if (isNaN(eventId)) {
                 res.status(400).json({
                     success: false,
                     message: 'Invalid event ID'
                 });
+                return; // Return early
             }
 
-            // Verify ownership if not admin
-            if (req.user?.role !== 'ADMIN') {
-                const event = await EventService.getEventById(eventId);
-
-                if (event.organiserId !== userId) {
-                    res.status(403).json({
-                        success: false,
-                        message: 'You are not authorized to update this event'
-                    });
-                }
+            if (!userId || !userRole) {
+                res.status(401).json({ success: false, message: 'Authentication required' });
+                return;
             }
 
             // Validate status
@@ -248,24 +251,34 @@ export class EventController {
                     success: false,
                     message: 'Invalid status. Must be DRAFT, PUBLISHED, or CANCELLED'
                 });
+                return; // Return early
             }
 
+            // Ownership check moved to service layer
             // Update event status
-            const event = await EventService.updateEventStatus(eventId, status);
+            const event = await EventService.updateEventStatus(eventId, status, userId, userRole);
 
             res.status(200).json({
                 success: true,
                 data: event
             });
         }
-        catch (error) {
+        catch (error: any) { // Catch any error
             console.error('Error updating event status:', error);
-
-            res.status(500).json({
-                success: false,
-                message: 'Error updating event status',
-                error: error instanceof Error ? error.message : 'Unknown error'
-            });
+            if (error.message === 'Event not found') {
+                res.status(404).json({ success: false, message: error.message });
+            } else if (error.message === 'You are not authorized to update this event status' || error.message === 'Cancelled events can only be restored to draft status' || error.message === 'Cannot change status of a completed event') {
+                res.status(403).json({ success: false, message: error.message });
+            } else if (error.message === 'Invalid status. Must be DRAFT, PUBLISHED, or CANCELLED' || error.message === 'Events must have at least one question before publishing' || error.message === 'Paid events must have at least one ticket type before publishing') {
+                res.status(400).json({ success: false, message: error.message });
+            }
+            else {
+                res.status(500).json({
+                    success: false,
+                    message: 'Error updating event status',
+                    error: error.message || 'Unknown error'
+                });
+            }
         }
     }
 
@@ -279,6 +292,7 @@ export class EventController {
         try {
             const eventId = Number(req.params.id);
             const userId = req.user?.userId;
+            const userRole = req.user?.role;
 
             //Validate event ID
             if (isNaN(eventId)) {
@@ -286,36 +300,39 @@ export class EventController {
                     success: false,
                     message: 'Invalid event ID'
                 });
+                return; // Return early
             }
 
-            //Verify ownership if not admin
-            if (req.user?.role !== 'ADMIN') {
-                const event = await EventService.getEventById(eventId);
-
-                if (event.organiserId !== userId) {
-                    res.status(403).json({
-                        success: false,
-                        message: 'You are not authorized to delete this event'
-                    });
-                }
+            if (!userId || !userRole) {
+                res.status(401).json({ success: false, message: 'Authentication required' });
+                return;
             }
 
+            // Ownership check moved to service layer
             // Delete event
-            await EventService.deleteEvent(eventId);
+            await EventService.deleteEvent(eventId, userId, userRole);
 
             res.status(200).json({
                 success: true,
                 message: 'Event deleted successfully'
             });
         }
-        catch (err) {
+        catch (err: any) { // Catch any error
             console.error('Error deleting event:', err);
-
-            res.status(500).json({
-                success: false,
-                message: 'Error deleting event',
-                error: err instanceof Error ? err.message : 'Unknown error'
-            });
+            if (err.message === 'Event not found') {
+                res.status(404).json({ success: false, message: err.message });
+            } else if (err.message === 'You are not authorized to delete this event') {
+                res.status(403).json({ success: false, message: err.message });
+            } else if (err.message === 'Cannot delete an event with registrations. Please cancel the event instead.') {
+                res.status(400).json({ success: false, message: err.message });
+            }
+            else {
+                res.status(500).json({
+                    success: false,
+                    message: 'Error deleting event',
+                    error: err.message || 'Unknown error'
+                });
+            }
         }
     }
 
