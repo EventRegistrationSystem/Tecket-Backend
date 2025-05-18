@@ -250,7 +250,7 @@ router.post('/events/:eventId/tickets',
 router.put('/events/:eventId/tickets/:ticketId',
     authenticate,
     authorize('ORGANIZER', 'ADMIN'), // Authorization check: Only organizers
-    validateRequest(updateTicketSchema), // Validation check
+    validateRequest(updateTicketSchema), 
     TicketController.updateTicket
 );
 

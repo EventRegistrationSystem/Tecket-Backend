@@ -1,4 +1,4 @@
-import express from 'express';
+import express from 'express'; // Reverted import
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 
@@ -26,7 +26,7 @@ app.use(cookieParser());  // Middleware to parse cookies
 // Enable CORS for all routes
 app.use(cors({
     origin: '*', // Allow all origins (for development purposes only)
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
 }));
 
 // Swagger UI route
@@ -40,6 +40,5 @@ app.use('/api/registrations', registrationRoutes);
 // app.use('/api/payments', paymentRoutes);
 
 app.use('/api', ticketRoutes);
-
 
 export default app;

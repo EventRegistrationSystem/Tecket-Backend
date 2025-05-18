@@ -8,7 +8,8 @@ export class AuthController {
     private static readonly REFRESH_TOKEN_COOKIE_OPTIONS = {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production', // HTTPS only in production
-        sameSite: 'strict' as const,
+        sameSite: 'strict' as const, // Reverted to original 'strict'
+        // sameSite: (process.env.NODE_ENV === 'production' ? 'strict' : 'lax') as 'strict' | 'lax' | 'none' | undefined,
         maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
         path: '/'  // Cookie is available for all paths
     }; 

@@ -10,7 +10,7 @@ export const authenticate = (req: Request, res: Response, next: NextFunction) =>
         const token = req.header('Authorization')?.replace('Bearer ', '');
 
         if (!token) {
-            throw new Error('Invalid token');
+            throw new AuthenticationError('Access token is required');
         }
 
         const decoded = jwt.verify(token, process.env.JWT_SECRET!) as JwtPayload;
@@ -51,14 +51,16 @@ export const optionalAuthenticate = (req: Request, res: Response, next: NextFunc
             req.user = decoded;
             console.log('User authenticated:', req.user);
             next();
-        } catch (tokenError: any) { // Catch specific error
-            // Invalid token, but continue as public access
-            console.error('Token verification failed:', tokenError.name, '-', tokenError.message); // Log specific JWT error
-            console.log('Continuing as public access due to token verification failure.');
-            next();
+        } catch (tokenError: any) { 
+            // If a token was provided but it's invalid (e.g., expired, malformed)
+            // it should result in a 401 to allow the client to attempt a refresh.
+            // Only truly unauthenticated (no token at all) should proceed as public.
+            console.error('Token verification failed:', tokenError.name, '-', tokenError.message);
+            // Pass an AuthenticationError to trigger a 401 response
+            next(new AuthenticationError('Invalid or expired token.')); 
         }
     }
-    catch (error: any) { // Catch other unexpected errors during token processing
+    catch (error: any) { // Catch other unexpected errors during initial token processing (e.g., header parsing)
         console.error('Unexpected authentication middleware error:', error.message);
         console.log('Continuing as public access due to unexpected authentication error.');
         next();

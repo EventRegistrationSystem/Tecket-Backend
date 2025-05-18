@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express'; // Added NextFunction
 import { EventService } from '../services/eventServices';
 import { CreateEventDTO, EventFilters } from '../types/eventTypes';
-import { ValidationError, NotFoundError, AuthorizationError } from '../utils/errors'; // Import more error types
+import { ValidationError, NotFoundError, AuthorizationError, AuthenticationError } from '../utils/errors'; // Import more error types
 
 export class EventController {
 
@@ -35,14 +35,20 @@ export class EventController {
             });
         }
         catch (error: any) {
-            console.log("Error creating event: ", error);
-            if (error instanceof ValidationError) {
-                res.status(400).json({ success: false, message: error.message });
+            console.error("Error creating event: ", error); // Changed to console.error
+            if (error instanceof AuthenticationError) {
+                res.status(error.statusCode || 401).json({ success: false, message: error.message });
+            } else if (error instanceof AuthorizationError) {
+                res.status(error.statusCode || 403).json({ success: false, message: error.message });
+            } else if (error instanceof ValidationError) {
+                res.status(error.statusCode || 400).json({ success: false, message: error.message });
+            } else if (error instanceof NotFoundError) {
+                res.status(error.statusCode || 404).json({ success: false, message: error.message });
             } else {
                 res.status(500).json({
                     success: false,
-                    message: 'Internal server error creating event',
-                    error: error.message || 'Internal server error'
+                    message: 'Internal server error creating event.', // Standardized message
+                    error: process.env.NODE_ENV === 'development' ? error.message : undefined
                 });
             }
         }
@@ -119,13 +125,21 @@ export class EventController {
         }
         catch (error: any) {
             console.error('Error getting events:', error);
-            // For getAllEvents, most errors are unexpected, so a generic 500 is often appropriate.
-            // Specific filtering errors might be caught by service if they become ValidationErrors.
-            res.status(500).json({
-                success: false,
-                message: 'Internal server error retrieving events',
-                error: error.message || 'Unknown error'
-            });
+            if (error instanceof AuthenticationError) { // Added to handle errors from optionalAuthenticate
+                res.status(error.statusCode || 401).json({ success: false, message: error.message });
+            } else if (error instanceof AuthorizationError) {
+                res.status(error.statusCode || 403).json({ success: false, message: error.message });
+            } else if (error instanceof ValidationError) { // e.g. if service throws validation on filter values
+                res.status(error.statusCode || 400).json({ success: false, message: error.message });
+            } else if (error instanceof NotFoundError) {
+                res.status(error.statusCode || 404).json({ success: false, message: error.message });
+            } else {
+                res.status(500).json({
+                    success: false,
+                    message: 'Internal server error retrieving events.', // Standardized message
+                    error: process.env.NODE_ENV === 'development' ? error.message : undefined
+                });
+            }
         }
     }
 
@@ -157,16 +171,19 @@ export class EventController {
         }
         catch (error: any) { // Catch any error
             console.error('Error getting event:', error);
-            if (error instanceof NotFoundError) {
-                res.status(404).json({ success: false, message: error.message });
+            if (error instanceof AuthenticationError) { // Added for completeness
+                res.status(error.statusCode || 401).json({ success: false, message: error.message });
+            } else if (error instanceof NotFoundError) {
+                res.status(error.statusCode || 404).json({ success: false, message: error.message });
             } else if (error instanceof AuthorizationError) {
-                res.status(403).json({ success: false, message: error.message });
-            }
-            else {
+                res.status(error.statusCode || 403).json({ success: false, message: error.message });
+            } else if (error instanceof ValidationError) {
+                res.status(error.statusCode || 400).json({ success: false, message: error.message });
+            } else {
                 res.status(500).json({
                     success: false,
-                    message: 'Internal server error retrieving event',
-                    error: error.message || 'Unknown error'
+                    message: 'Internal server error retrieving event.', // Standardized message
+                    error: process.env.NODE_ENV === 'development' ? error.message : undefined
                 });
             }
         }
@@ -208,18 +225,19 @@ export class EventController {
         }
         catch (error: any) { // Catch any error
             console.error('Error updating event:', error);
-            if (error instanceof NotFoundError) {
-                res.status(404).json({ success: false, message: error.message });
+            if (error instanceof AuthenticationError) { // Added for completeness
+                res.status(error.statusCode || 401).json({ success: false, message: error.message });
+            } else if (error instanceof NotFoundError) {
+                res.status(error.statusCode || 404).json({ success: false, message: error.message });
             } else if (error instanceof AuthorizationError) {
-                res.status(403).json({ success: false, message: error.message });
+                res.status(error.statusCode || 403).json({ success: false, message: error.message });
             } else if (error instanceof ValidationError) {
-                res.status(400).json({ success: false, message: error.message });
-            }
-            else {
+                res.status(error.statusCode || 400).json({ success: false, message: error.message });
+            } else {
                 res.status(500).json({
                     success: false,
-                    message: 'Error updating event',
-                    error: error.message || 'Unknown error'
+                    message: 'Error updating event.', // Standardized message
+                    error: process.env.NODE_ENV === 'development' ? error.message : undefined
                 });
             }
         }
@@ -271,18 +289,19 @@ export class EventController {
         }
         catch (error: any) { // Catch any error
             console.error('Error updating event status:', error);
-            if (error instanceof NotFoundError) {
-                res.status(404).json({ success: false, message: error.message });
+            if (error instanceof AuthenticationError) { // Added for completeness
+                res.status(error.statusCode || 401).json({ success: false, message: error.message });
+            } else if (error instanceof NotFoundError) {
+                res.status(error.statusCode || 404).json({ success: false, message: error.message });
             } else if (error instanceof AuthorizationError) {
-                res.status(403).json({ success: false, message: error.message });
+                res.status(error.statusCode || 403).json({ success: false, message: error.message });
             } else if (error instanceof ValidationError) {
-                res.status(400).json({ success: false, message: error.message });
-            }
-            else {
+                res.status(error.statusCode || 400).json({ success: false, message: error.message });
+            } else {
                 res.status(500).json({
                     success: false,
-                    message: 'Error updating event status',
-                    error: error.message || 'Unknown error'
+                    message: 'Error updating event status.', // Standardized message
+                    error: process.env.NODE_ENV === 'development' ? error.message : undefined
                 });
             }
         }
@@ -325,18 +344,19 @@ export class EventController {
         }
         catch (err: any) { // Catch any error
             console.error('Error deleting event:', err);
-            if (err instanceof NotFoundError) {
-                res.status(404).json({ success: false, message: err.message });
+            if (err instanceof AuthenticationError) { // Added for completeness
+                res.status(err.statusCode || 401).json({ success: false, message: err.message });
+            } else if (err instanceof NotFoundError) {
+                res.status(err.statusCode || 404).json({ success: false, message: err.message });
             } else if (err instanceof AuthorizationError) {
-                res.status(403).json({ success: false, message: err.message });
+                res.status(err.statusCode || 403).json({ success: false, message: err.message });
             } else if (err instanceof ValidationError) {
-                res.status(400).json({ success: false, message: err.message });
-            }
-            else {
+                res.status(err.statusCode || 400).json({ success: false, message: err.message });
+            } else {
                 res.status(500).json({
                     success: false,
-                    message: 'Error deleting event',
-                    error: err.message || 'Unknown error'
+                    message: 'Error deleting event.', // Standardized message
+                    error: process.env.NODE_ENV === 'development' ? err.message : undefined
                 });
             }
         }
