@@ -8,6 +8,7 @@ import {
 // Use the new DTOs
 import { CreateRegistrationDto, CreateRegistrationResponse } from '../types/registrationTypes';
 import { AppError, AuthorizationError, ValidationError } from '../utils/errors';
+import { RegistrationStatus } from '@prisma/client'; // Added for status validation/typing
 
 export class RegistrationController {
     /**
@@ -18,6 +19,7 @@ export class RegistrationController {
         try {
             // TODO: Update registrationValidationSchema to match CreateRegistrationDto structure
             // For now, assume basic validation or skip for initial refactor
+            
             // const { error, value } = registrationValidationSchema.validate(req.body);
             // if (error) {
             //     throw new ValidationError(`Validation failed: ${error.details.map(x => x.message).join(', ')}`);
@@ -163,6 +165,79 @@ export class RegistrationController {
 
         } catch(err) {
             next(err); // Pass error to global handler
+        }
+    }
+
+    /**
+     * Handle GET /api/events/:eventId/registrations
+     * Retrieves a list of registration summaries for a specific event.
+     * Requires authentication (Admin or Event Organizer).
+     */
+    static async getRegistrationsForEvent(req: Request, res: Response, next: NextFunction): Promise<void> {
+        try {
+            // 1. Validate and parse eventId from path parameters
+            const eventId = parseInt(req.params.eventId, 10);
+            if (isNaN(eventId)) {
+                throw new ValidationError('Invalid event ID format.');
+            }
+
+            // 2. Ensure user is authenticated
+            if (!req.user) {
+                throw new AppError(401, 'Authentication required.');
+            }
+            
+            // 3. Parse and prepare query parameters for the service
+            // TODO: Implement Joi validation for these query parameters
+            const { page, limit, search, status, ticketId } = req.query;
+
+            const queryParams: {
+                page?: number;
+                limit?: number;
+                search?: string;
+                status?: RegistrationStatus;
+                ticketId?: number;
+            } = {};
+
+            if (page) queryParams.page = parseInt(page as string, 10);
+            if (limit) queryParams.limit = parseInt(limit as string, 10);
+            if (search) queryParams.search = search as string;
+            if (status) {
+                // Basic validation for status enum
+                if (Object.values(RegistrationStatus).includes(status as RegistrationStatus)) {
+                    queryParams.status = status as RegistrationStatus;
+                } else {
+                    throw new ValidationError(`Invalid status value. Must be one of: ${Object.values(RegistrationStatus).join(', ')}`);
+                }
+            }
+            if (ticketId) queryParams.ticketId = parseInt(ticketId as string, 10);
+
+            // Default values for page and limit are handled by the service if not provided
+
+            // 4. Call service method
+            // The service method `getRegistrationsForEvent` expects query parameters as its second argument.
+            // We need to ensure the structure matches `GetRegistrationsForEventQuery` from the service.
+            // The service method signature is: getRegistrationsForEvent(eventId: number, query: GetRegistrationsForEventQuery, authUser: JwtPayload)
+            
+            const result = await RegistrationService.getRegistrationsForEvent(
+                eventId,
+                { // Construct the query object matching GetRegistrationsForEventQuery
+                    page: queryParams.page, // Will be undefined if not provided, service handles default
+                    limit: queryParams.limit, // Will be undefined if not provided, service handles default
+                    search: queryParams.search,
+                    status: queryParams.status,
+                    ticketId: queryParams.ticketId
+                },
+                req.user
+            );
+
+            // 5. Send response
+            res.status(200).json({
+                message: `Registrations for event ${eventId} retrieved successfully`,
+                ...result // result contains data and pagination
+            });
+
+        } catch (err) {
+            next(err);
         }
     }
 }

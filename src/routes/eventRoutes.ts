@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { EventController } from '../controllers/eventController';
+import { RegistrationController } from '../controllers/registrationController'; // Import RegistrationController
 import { authorize, authenticate, validateRequest, optionalAuthenticate } from '../middlewares/authMiddlewares';
 import { createEventSchema } from '../validation/eventValidation';
 import eventQuestionRoutes from './eventQuestionRoutes'; // Import the sub-router
@@ -333,6 +334,99 @@ router.delete('/:id',
     authenticate,
     authorize('ORGANIZER', 'ADMIN'),
     EventController.deleteEvent);
+
+// Route to get registrations for a specific event
+/**
+ * @openapi
+ * /events/{eventId}/registrations:
+ *   get:
+ *     summary: Get registrations for a specific event
+ *     description: Retrieve a list of registration summaries for a specific event. Requires Admin or Event Organizer role.
+ *     tags: [Events, Registrations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: eventId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: The ID of the event
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Number of items per page
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search term for primary registrant name/email or attendee names/email
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           $ref: '#/components/schemas/RegistrationStatus' # Assuming RegistrationStatus schema is defined
+ *         description: Filter by registration status (CONFIRMED, PENDING, CANCELLED)
+ *       - in: query
+ *         name: ticketId
+ *         schema:
+ *           type: integer
+ *         description: Filter by registrations containing a specific ticket type
+ *     responses:
+ *       200:
+ *         description: A list of registration summaries for the event
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object # Define structure for registration summary
+ *                     properties:
+ *                       registrationId:
+ *                         type: integer
+ *                       registrationDate:
+ *                         type: string
+ *                         format: date-time
+ *                       primaryParticipantName:
+ *                         type: string
+ *                       primaryParticipantEmail:
+ *                         type: string
+ *                       numberOfAttendees:
+ *                         type: integer
+ *                       registrationStatus:
+ *                         $ref: '#/components/schemas/RegistrationStatus'
+ *                       totalAmountPaid:
+ *                         type: number
+ *                         nullable: true
+ *                 pagination:
+ *                   $ref: '#/components/schemas/Pagination'
+ *       400:
+ *         description: Invalid input parameters
+ *       401:
+ *         description: Unauthorized - Authentication required
+ *       403:
+ *         description: Forbidden - User does not have permission
+ *       404:
+ *         description: Event not found
+ *       500:
+ *         description: Server error
+ */
+router.get('/:eventId/registrations',
+    authenticate, // Ensures req.user is populated for service layer authorization
+    RegistrationController.getRegistrationsForEvent
+);
 
 // Mount event question routes nested under /events/:eventId/questions
 router.use('/:eventId/questions', eventQuestionRoutes);

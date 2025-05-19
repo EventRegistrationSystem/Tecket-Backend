@@ -16,6 +16,15 @@ interface GetRegistrationsQuery {
     limit: number;
 }
 
+// Type for query parameters for listing registrations for a specific event (Admin/Organizer view)
+interface GetRegistrationsForEventQuery {
+    page?: number; // Default 1
+    limit?: number; // Default 10
+    search?: string; // Searches primary registrant name/email, attendee names/email
+    status?: RegistrationStatus; // CONFIRMED, PENDING, CANCELLED
+    ticketId?: number; // Filter by registrations containing a specific ticket type
+}
+
 export class RegistrationService {
     /**
      * Creates a registration for an event, handling multiple participants and tickets.
@@ -382,6 +391,166 @@ export class RegistrationService {
         ]);
 
         return { registrations, totalCount };
+    }
+
+    
+    /**
+     * Retrieves a paginated list of registration summaries for a specific event.
+     * For use by Admins or Organizers of the event.
+     * @param eventId The ID of the event.
+     * @param query Query parameters for pagination, filtering, and searching.
+     * @param authUser The authenticated user performing the request.
+     */
+    static async getRegistrationsForEvent(
+        eventId: number,
+        query: GetRegistrationsForEventQuery,
+        authUser: JwtPayload
+    ) {
+        const { page = 1, limit = 10, search, status, ticketId } = query;
+        const skip = (page - 1) * limit;
+
+        // 1. Authorization Check: Admin or Event Organizer
+        const event = await prisma.event.findUnique({
+            where: { id: eventId },
+            select: { organiserId: true }
+        });
+
+        if (!event) {
+            throw new NotFoundError('Event not found.');
+        }
+
+        const isAdmin = authUser.role === UserRole.ADMIN;
+        const isEventOrganizer = event.organiserId === authUser.userId;
+
+        if (!isAdmin && !isEventOrganizer) {
+            throw new AuthorizationError('Forbidden: You do not have permission to view registrations for this event.');
+        }
+
+        // 2. Build Prisma Where Clause
+        const whereInput: Prisma.RegistrationWhereInput = {
+            eventId: eventId,
+        };
+
+        if (status) {
+            whereInput.status = status;
+        }
+
+        if (search) {
+            const searchLower = search.toLowerCase();
+            // Base search on participant fields
+            const participantSearch = [
+                { participant: { firstName: { contains: searchLower } } },
+                { participant: { lastName: { contains: searchLower } } },
+                { participant: { email: { contains: searchLower } } },
+                // Removed search on participant.user.email as per user feedback
+            ];
+
+            // Search on attendees' participant fields
+            const attendeeParticipantSearch = {
+                attendees: {
+                    some: {
+                        participant: {
+                            OR: [
+                                { firstName: { contains: searchLower } },
+                                { lastName: { contains: searchLower } },
+                                { email: { contains: searchLower } },
+                                // Removed search on participant.user.email as per user feedback
+                            ]
+                        }
+                    }
+                }
+            };
+            whereInput.OR = [...participantSearch, attendeeParticipantSearch];
+        }
+
+        if (ticketId) {
+            whereInput.purchase = {
+                items: {
+                    some: {
+                        ticketId: ticketId
+                    }
+                }
+            };
+        }
+
+        // 3. Fetch Registrations and Total Count
+        // Define a type for the registration payload with includes
+        type RegistrationWithDetails = Prisma.RegistrationGetPayload<{
+            include: {
+                participant: { // Primary participant
+                    select: { 
+                        firstName: true, 
+                        lastName: true, 
+                        email: true,
+                        // user: { select: { name: true } } // Assuming 'name' exists on User. If not, remove or change.
+                                         // For now, let's assume user's name is not directly available or needed for summary
+                    }
+                },
+                attendees: { // To count them
+                    select: { id: true }
+                },
+                purchase: { // To get total amount paid
+                    select: { totalPrice: true }
+                }
+            }
+        }>;
+
+        const transactionResult = await prisma.$transaction([
+            prisma.registration.findMany({
+                where: whereInput,
+                skip,
+                take: limit,
+                orderBy: { created_at: 'desc' },
+                include: {
+                    participant: { // Primary participant
+                        select: { 
+                            firstName: true, 
+                            lastName: true, 
+                            email: true,
+                          
+                        }
+                    },
+                    attendees: { // To count them
+                        select: { id: true }
+                    },
+                    purchase: { // To get total amount paid
+                        select: { totalPrice: true }
+                    }
+                }
+            }), // Removed incorrect cast here
+            prisma.registration.count({ where: whereInput })
+        ]);
+
+        const registrations = transactionResult[0] as RegistrationWithDetails[];
+        const totalCount = transactionResult[1] as number;
+
+        // 4. Format Response
+        const formattedRegistrations = registrations.map((reg: RegistrationWithDetails) => {
+            // Construct primary participant name from participant fields
+            // If User.name were available and selected, it could be used here:
+            // let primaryParticipantName = reg.participant.user?.name || `${reg.participant.firstName} ${reg.participant.lastName}`;
+            const primaryParticipantName = `${reg.participant.firstName} ${reg.participant.lastName}`;
+
+            return {
+                registrationId: reg.id,
+                registrationDate: reg.created_at,
+                primaryParticipantName: primaryParticipantName,
+                primaryParticipantEmail: reg.participant.email,
+                numberOfAttendees: reg.attendees.length,
+                registrationStatus: reg.status,
+                totalAmountPaid: reg.purchase?.totalPrice ?? null // Handle cases with no purchase (e.g., free events)
+            };
+        });
+
+        return {
+            data: formattedRegistrations,
+            pagination: {
+                page,
+                limit,
+                totalCount,
+                totalPages: Math.ceil(totalCount / limit)
+            }
+        };
     }
 
      /**
