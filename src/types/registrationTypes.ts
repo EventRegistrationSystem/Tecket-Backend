@@ -73,3 +73,26 @@ export interface RegistrationDetailsDto {
     };
     // Add other relevant fields as needed
 }
+
+// DTO for a single registration summary in a list
+export interface RegistrationSummaryDto {
+    registrationId: number;
+    registrationDate: Date;
+    primaryParticipantName: string; // e.g., "John Doe"
+    primaryParticipantEmail: string;
+    numberOfAttendees: number;
+    status: string; // RegistrationStatus enum value
+    totalAmountPaid?: number; // Optional, for paid events
+    eventName?: string; // Optional, for admin views listing registrations across events
+}
+
+// DTO for the paginated list of registration summaries
+export interface PaginatedRegistrationSummaryResponse {
+    registrations: RegistrationSummaryDto[];
+    pagination: {
+        total: number;
+        page: number;
+        limit: number;
+        pages: number;
+    };
+}

@@ -1,6 +1,6 @@
 # Refactoring Summary: Ticket and Question Management
 
-**Date:** 2025-05-17
+**Date:** 2025-05-18 (Updated for EventService.updateEvent reversion)
 
 This document outlines considerations and recommended actions for refactoring the management of Tickets and Event-Specific Questions within the Event Registration System, covering both backend and frontend aspects.
 
@@ -25,13 +25,12 @@ This document outlines considerations and recommended actions for refactoring th
     *   **Action:** Continue to use and rely on the dedicated endpoints in `ticketRoutes.ts` (e.g., `POST /events/:eventId/tickets`, `PUT /events/:eventId/tickets/:ticketId`, `DELETE /events/:eventId/tickets/:ticketId`) for all ticket creation (after initial event setup), updates, and deletions.
     *   **Rationale:** This provides clear, atomic, and RESTful operations for managing ticket types.
 
-2.  **Refine `EventService.updateEvent` Behavior for Tickets:**
-    *   **Action:** Modify `EventService.updateEvent` (called by `PUT /events/:id`) to **not** process the `tickets` array from its payload by default. It should primarily focus on updating core `Event` entity properties.
-    *   **Rationale:**
-        *   Avoids ambiguity and potential unintended "replace unsold tickets" behavior when an organizer only intends to update event details like name or description.
-        *   Ensures that updates to existing tickets (especially those with sales) are handled correctly through the dedicated `PUT /events/:eventId/tickets/:ticketId` endpoint, which has more appropriate logic.
-        *   If a bulk "synchronize all tickets" functionality is ever truly needed via `PUT /events/:id`, it should be an explicit opt-in (e.g., via a query parameter) with very clear documentation, rather than the default behavior.
-    *   **Alternative (if keeping some ticket handling in `updateEvent`):** Make the ticket processing conditional and ensure it can also update existing ticket records rather than just delete-and-recreate. However, deferring to dedicated ticket routes is cleaner.
+2.  **Refine `EventService.updateEvent` Behavior for Tickets (Monolithic Sync Re-implemented):**
+    *   **Status: COMPLETED (2025-05-18).**
+    *   **Action:** `EventService.updateEvent` (called by `PUT /api/events/:id`) has been refactored to again handle monolithic synchronization of the entire `tickets` collection for an event.
+    *   It achieves this by performing comparison logic (identifying tickets to add, update, or delete) and then orchestrating calls to the respective `TicketService` methods (e.g., `createTicket`, `updateTicket`, `deleteTicket`).
+    *   `TicketService` methods were made transaction-aware (accepting an optional Prisma transaction client `tx`) to ensure atomicity when called from `EventService.updateEvent`'s transaction.
+    *   **Rationale for Reversion:** To simplify frontend logic for event updates by allowing a full state replacement for tickets via the main event update endpoint, while still leveraging the business logic and security (like not deleting sold tickets) encapsulated in `TicketService`.
 
 3.  **No Changes Needed for `EventService.createEvent` for Tickets:**
     *   The current approach of allowing initial ticket definitions within the `CreateEventDTO` for `POST /events` is convenient and acceptable for initial setup.
@@ -101,9 +100,12 @@ This document outlines considerations and recommended actions for refactoring th
         *   Enables a more flexible frontend UI for individual question management post-event creation.
         *   Decouples detailed question management from the main event update logic.
 
-3.  **Refine `EventService.updateEvent` for Questions (If Dedicated Endpoints are Added):**
-    *   **Status: COMPLETED (2025-05-17).** The complex question synchronization logic was removed from `EventService.updateEvent`. `PUT /events/:id` now focuses solely on core event properties. Management of the question list post-creation is now handled via the dedicated `/events/:eventId/questions/*` endpoints.
-    *   **Rationale:** Avoids two ways of managing the same resource, simplifies `EventService.updateEvent`.
+3.  **Refine `EventService.updateEvent` for Questions (Monolithic Sync Re-implemented):**
+    *   **Status: COMPLETED (2025-05-18).**
+    *   **Action:** Similar to tickets, `EventService.updateEvent` has been refactored to handle monolithic synchronization of the `questions` collection (i.e., `EventQuestions` links) for an event.
+    *   It performs comparison logic and orchestrates calls to the respective `EventQuestionService` methods (e.g., `addQuestionToEvent`, `updateEventQuestionLink`, `deleteEventQuestionLink`).
+    *   `EventQuestionService` methods were made transaction-aware (accepting `tx`).
+    *   **Rationale for Reversion:** To simplify frontend logic for event updates by allowing full state replacement for question links via the main event update endpoint, while leveraging `EventQuestionService` for its specialized logic (like find-or-create global questions and respecting rules about responses).
 
 4.  **Global Question Bank Management (Optional Future Enhancement):**
     *   **Consideration:** If admins/organizers need a dedicated UI/API to manage the global `Question` table directly (e.g., `GET /questions`, `POST /questions` to add to bank, `PUT /questions/:id` to edit global question text/type – with care if already used), this would be a separate feature. The "find or create" logic in `EventQuestionService` (when linking) would still apply.
@@ -151,10 +153,10 @@ The introduction and consistent use of dedicated services/endpoints for Tickets 
     *   **Recommendation (Status: COMPLETED for question handling alignment in `createEvent`, PENDING for full impact assessment after UI changes):** `EventService.createEvent` now aligns with the "find or create" global question logic. The `questions` array in `CreateEventDTO` for `POST /events` is still useful for initial setup.
 
 2.  **`PUT /events/:id` (Update Event):**
-    *   **Current Behavior (after backend refactoring for tickets and questions):** This endpoint is now primarily for updating core event details (name, description, dates, capacity, `isFree` status, etc.). It no longer handles ticket collection updates by default, and its question synchronization logic has been removed.
-    *   **Impact of Dedicated Ticket Endpoints:** Positive. Ticket modifications are now exclusively via `ticketRoutes.ts`.
-    *   **Impact of Dedicated Question Endpoints:** Positive. Question modifications post-creation are now exclusively via `eventQuestionRoutes.ts`. The `PUT /events/:id` endpoint is significantly simplified.
-    *   **Recommendation:** For `PUT /events/:id`, the DTO (`Partial<CreateEventDTO>`) might still define `tickets` and `questions` arrays. It should be clearly documented (and enforced in `EventService.updateEvent` if necessary by explicitly ignoring these fields) that these arrays in the `PUT /events/:id` payload are NOT processed for updating ticket/question collections. All such updates must use their dedicated granular endpoints.
+    *   **Current Behavior (after strategic reversion - 2025-05-18):** This endpoint, via `EventService.updateEvent`, now handles updates to core event details AND performs monolithic synchronization of associated `tickets` and `EventQuestions` links.
+    *   It achieves this by orchestrating calls to transaction-aware methods in `TicketService` and `EventQuestionService`.
+    *   **Impact:** Provides a single endpoint for comprehensive event updates if desired by the frontend, while still allowing granular APIs for tickets and questions to be used independently.
+    *   **Recommendation:** Frontend can choose to send full `tickets` and `questions` arrays to `PUT /events/:id` for a full sync, or use granular endpoints for specific changes. Backend Joi validation for `PUT /events/:id` should allow optional `tickets` and `questions` arrays.
 
 ## V. Admin Privilege Standardization (Backend) (Date: 2025-05-17)
 
