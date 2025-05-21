@@ -38,7 +38,7 @@ This document outlines the core workflows that Administrators (Admins) and Event
         *   Basic payment information (e.g., payment intent status, amount).
 *   **Underlying API & Current Status:**
     *   **API Endpoint:** `GET /api/registrations/:registrationId`
-    *   **Current Status:** This endpoint is expected to be available and enhanced as part of Phase 1 of the registration management plan to ensure all necessary details are included.
+    *   **Current Status:** Backend Enhanced (Phase 1). The endpoint has been reviewed and updated to ensure it includes comprehensive details such as all attendees, their questionnaire responses, full ticket purchase information, and payment status.
 
 ## 3. Updating Registration Status
 
@@ -96,7 +96,7 @@ This document outlines the core workflows that Administrators (Admins) and Event
         *   `ticketId`
     4.  A global search function would also be available.
 *   **Underlying API & Current Status:**
-    *   **API Endpoint:** `GET /api/admin/registrations`
-    *   **Current Status:** Planned for **Phase 1**, to be developed alongside the event-specific registration list view. This provides admins with powerful oversight capabilities from early on.
+    *   **API Endpoint:** `GET /api/admin/registrations` (Implemented as `GET /api/registrations/admin/all-system-summary`)
+    *   **Current Status:** Implemented (Phase 1). The backend (service, controller, route) for fetching a system-wide, filterable, and searchable list of registration summaries for administrators is in place.
 
 These workflows represent the key interactions an administrator or event organizer would have with the registration management module, evolving as more features are implemented according to the development plan.

@@ -162,10 +162,10 @@ This will likely involve enhancements to `RegistrationService`, `RegistrationCon
 ## 5. Implementation Steps (Phased Approach)
 
 **Phase 1: Backend Read APIs**
-1.  Implement `GET /api/events/:eventId/registrations` (Service, Controller, Route).
-2.  Implement `GET /api/admin/registrations` (Service, Controller, Route).
-3.  Enhance `GET /api/registrations/:registrationId` to ensure all required details (attendees, responses, tickets) are included.
-4.  Thoroughly test with ADMIN and ORGANIZER roles.
+1.  Implement `GET /api/events/:eventId/registrations` (Service, Controller, Route). **(Backend DONE)**
+2.  Implement `GET /api/admin/registrations` (Service, Controller, Route). **(Backend DONE - Implemented as `GET /api/registrations/admin/all-system-summary`)**
+3.  Enhance `GET /api/registrations/:registrationId` to ensure all required details (attendees, responses, tickets) are included. **(Backend DONE)**
+4.  Thoroughly test with ADMIN and ORGANIZER roles. (Responsibility of development/QA team)
 
 **Phase 2: Frontend Read UI**
 1.  Implement Registration List View for Admins/Organizers.

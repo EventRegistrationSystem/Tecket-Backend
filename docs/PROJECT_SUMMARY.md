@@ -1,6 +1,6 @@
 # Project Summary: Event Registration System Backend
 
-**Last Updated:** 19/05/2025
+**Last Updated:** 21/05/2025
 
 ## 1. Project Purpose and Core Functionalities
 
@@ -33,6 +33,7 @@ To provide a robust backend API for managing events, registrations, tickets, and
     *   **Refactored for multiple participants (attendees) and multiple ticket types per registration.**
     *   Retrieval and cancellation implemented with ADMIN/ownership checks.
     *   Joi validation for registration payloads.
+    *   **Admin/Organizer Registration Viewing (Backend):** Implemented backend APIs for admins/organizers to view registration lists for specific events (`GET /api/events/:eventId/registrations`), view system-wide registration summaries (`GET /api/registrations/admin/all-system-summary`), and retrieve detailed information for a single registration (`GET /api/registrations/:registrationId` enhanced for full details).
 *   **Payment Processing (Stripe):** **(Core Backend Functionality Implemented & Manually Tested; Further Development Postponed)**
     *   Core logic for creating Stripe Payment Intents and handling webhooks for payment success/failure is in place and tested.
     *   Guest Payment Token system implemented.
@@ -195,6 +196,10 @@ Provides the user interface for interacting with the Event Registration System b
 *   **Registration System:**
     *   Refactored for multiple participants (attendees) and multiple ticket types per registration.
     *   CRUD operations with ADMIN/ownership checks. Joi validation for payloads.
+    *   **Registration Management (Admin/Organizer View - Backend Read APIs):**
+        *   `GET /api/events/:eventId/registrations`: Implemented for admins/organizers to list registration summaries for a specific event with filtering and pagination.
+        *   `GET /api/registrations/admin/all-system-summary`: Implemented for admins to list all registration summaries system-wide with comprehensive filtering and pagination (serves the purpose of planned `/api/admin/registrations`).
+        *   `GET /api/registrations/:registrationId`: Enhanced to return full registration details, including all attendees, their questionnaire responses, and purchase/ticket information.
 *   **Payment Processing (Stripe):** **(Core Backend Functionality Implemented & Manually Tested)**
     *   Added Stripe dependencies and configured environment variables.
     *   Updated `Payment` and `Purchase` models in Prisma schema and migrated database.
@@ -228,8 +233,10 @@ Provides the user interface for interacting with the Event Registration System b
 
 **Current Development Focus (High Priority):**
 1.  **Registration Management (Admin/Organizer - Backend & Frontend):**
-    *   **Backend:** Design and implement API endpoints for admins/organizers to view, search, and potentially manage registration details (including participant info, tickets, questionnaire responses).
-    *   **Frontend:** Develop UI components for these registration management features.
+    *   **Backend:**
+        *   **Read APIs (View/Search): COMPLETED.** Endpoints for admins/organizers to view and search registration details (list for event, list all for admin, get by ID) are implemented.
+        *   **Next Backend Steps:** Implement update/action APIs (e.g., update status, limited edits, export).
+    *   **Frontend:** Develop UI components for these registration management features, starting with integrating the completed read APIs.
 2.  **Support New Question Types (Backend & Frontend):**
     *   **Backend:** Update Prisma schema (`QuestionType` enum, add `options` field to `Question` model for choices). Modify services and DTOs to handle at least one new type (e.g., multiple-choice/dropdown) including storage and retrieval of options.
     *   **Frontend:** Update event creation/question management UI to allow organizers to define new question types and their options. Update registration questionnaire form to render these new types.
