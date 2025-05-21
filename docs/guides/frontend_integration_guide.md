@@ -1,6 +1,6 @@
 # Backend API Integration Guide for Frontend Developers
 
-**Last Updated:** 10/05/2025
+**Last Updated:** 21/05/2025
 
 ## 1. Introduction & Overview
 
@@ -619,4 +619,148 @@ This section provides a summary of important Data Transfer Objects (DTOs) used i
 *(This is not an exhaustive list. Other DTOs for specific responses like individual ticket details, participant details, etc., can be found in Swagger or `src/types/`.)*
 
 ---
-*(Next sections could include: User Profile Management, Ticket Management (by Organizers), detailed Registration Management views, Workflow Diagrams, etc.)*
+
+### 3.6. Registration Management (Admin/Organizer Views - Read APIs)
+
+This section details the backend APIs implemented as part of Phase 1 for viewing and querying registration data, primarily for Administrator and Event Organizer roles.
+
+*   **1. List Registrations for a Specific Event:** `GET /api/events/:eventId/registrations`
+    *   **Purpose:** Allows an authenticated `ORGANIZER` (for events they own) or an `ADMIN` to retrieve a paginated list of registration summaries for a specific event.
+    *   **Authentication:** Required. The backend service layer enforces that the user is either an Admin or the Organizer of the specified event.
+    *   **Path Parameter:**
+        *   `:eventId` (number): The ID of the event for which to list registrations.
+    *   **Query Parameters:**
+        *   `page=<number>` (optional, default: 1): For pagination.
+        *   `limit=<number>` (optional, default: 10): For pagination.
+        *   `search=<string>` (optional): Searches across primary registrant's and attendees' names and emails.
+        *   `status=<CONFIRMED|PENDING|CANCELLED>` (optional): Filters by registration status.
+        *   `ticketId=<number>` (optional): Filters by registrations that include a specific ticket type.
+    *   **Success Response (200 OK):**
+        ```json
+        {
+          "message": "Registrations for event X retrieved successfully",
+          "data": [
+            {
+              "registrationId": 1,
+              "registrationDate": "2025-05-20T10:00:00.000Z",
+              "primaryParticipantName": "John Doe",
+              "primaryParticipantEmail": "john.doe@example.com",
+              "numberOfAttendees": 2,
+              "registrationStatus": "CONFIRMED",
+              "totalAmountPaid": 100.00 
+            }
+            // ... more registration summaries
+          ],
+          "pagination": {
+            "page": 1,
+            "limit": 10,
+            "totalCount": 25,
+            "totalPages": 3
+          }
+        }
+        ```
+    *   **Frontend Action:** Used in the event management dashboard to display a list of registrations for an event. Implement UI controls for pagination, search, and filtering based on the available query parameters.
+
+*   **2. List All Registrations System-Wide (Admin View):** `GET /api/registrations/admin/all-system-summary`
+    *   **Purpose:** Allows an authenticated `ADMIN` to retrieve a paginated list of all registration summaries across all events in the system.
+    *   **Authentication:** Required (`ADMIN` role only).
+    *   **Path Note:** While the conceptual API path might be `/api/admin/registrations`, due to routing structure, this is implemented at `/api/registrations/admin/all-system-summary`.
+    *   **Query Parameters:**
+        *   `page=<number>` (optional, default: 1)
+        *   `limit=<number>` (optional, default: 10)
+        *   `search=<string>` (optional): Searches across primary registrant's and attendees' names and emails.
+        *   `status=<CONFIRMED|PENDING|CANCELLED>` (optional): Filters by registration status.
+        *   `ticketId=<number>` (optional): Filters by registrations including a specific ticket.
+        *   `eventId=<number>` (optional): Filters for registrations of a specific event.
+        *   `userId=<number>` (optional): Filters for registrations created by a specific user.
+        *   `participantId=<number>` (optional): Filters for registrations where the specified participant is the primary registrant.
+    *   **Success Response (200 OK):**
+        ```json
+        {
+          "message": "All registrations retrieved successfully for admin view",
+          "data": [
+            {
+              "registrationId": 1,
+              "registrationDate": "2025-05-20T10:00:00.000Z",
+              "eventName": "Annual Music Festival", // Included for admin view
+              "primaryParticipantName": "John Doe",
+              "primaryParticipantEmail": "john.doe@example.com",
+              "numberOfAttendees": 2,
+              "registrationStatus": "CONFIRMED",
+              "totalAmountPaid": 100.00
+            }
+            // ... more registration summaries
+          ],
+          "pagination": { /* ... pagination object ... */ }
+        }
+        ```
+    *   **Frontend Action:** Used in the admin dashboard for a global view of registrations. Implement UI controls for all available filters and pagination.
+
+*   **3. Get Detailed Registration Information (Enhanced):** `GET /api/registrations/:registrationId`
+    *   **Purpose:** Allows an authenticated user (`ADMIN`, `ORGANIZER` of the event, or the `PARTICIPANT` who owns the registration) to retrieve comprehensive details for a single registration.
+    *   **Authentication:** Required.
+    *   **Path Parameter:**
+        *   `:registrationId` (number): The ID of the registration to retrieve.
+    *   **Success Response (200 OK):** A detailed registration object.
+        ```json
+        // Example structure (key fields, refer to Swagger/types for full details)
+        {
+          "message": "Registration retrieved successfully",
+          "data": {
+            "id": 123, // Registration ID
+            "status": "CONFIRMED",
+            "created_at": "2025-05-20T10:00:00.000Z",
+            "participant": { /* ... full primary participant details ... */ },
+            "event": {
+              "id": 1,
+              "name": "Annual Music Festival",
+              "startDateTime": "2025-07-20T10:00:00.000Z",
+              // ... other event summary fields
+            },
+            "attendees": [
+              {
+                "id": 1, // Attendee ID
+                "participant": { /* ... full participant details for this attendee ... */ },
+                "responses": [
+                  {
+                    "id": 10, // Response ID
+                    "responseText": "M",
+                    "eventQuestion": {
+                      "id": 1, // EventQuestion link ID
+                      "question": {
+                        "id": 201,
+                        "questionText": "What is your T-shirt size?",
+                        "questionType": "MULTIPLE_CHOICE"
+                      }
+                    }
+                  }
+                  // ... other responses for this attendee
+                ]
+              }
+              // ... other attendees
+            ],
+            "purchase": {
+              "id": 78,
+              "totalPrice": "150.00",
+              "items": [
+                {
+                  "id": 90, // PurchaseItem ID
+                  "quantity": 1,
+                  "unitPrice": "50.00", // Price at time of purchase
+                  "ticket": { "id": 101, "name": "General Admission" }
+                },
+                {
+                  "id": 91,
+                  "quantity": 1,
+                  "unitPrice": "100.00",
+                  "ticket": { "id": 102, "name": "VIP Early Bird" }
+                }
+              ],
+              "payment": { /* ... payment details if available ... */ }
+            }
+          }
+        }
+        ```
+    *   **Frontend Action:** Used to display a detailed view of a specific registration. This view would typically be accessed by clicking on an item from one of the list views (from API 1 or 2).
+
+*(Next sections could include: User Profile Management, Ticket Management (by Organizers), detailed Registration Management views for update/action APIs, Workflow Diagrams, etc.)*
