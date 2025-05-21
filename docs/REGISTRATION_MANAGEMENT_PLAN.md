@@ -168,9 +168,9 @@ This will likely involve enhancements to `RegistrationService`, `RegistrationCon
 4.  Thoroughly test with ADMIN and ORGANIZER roles. (Responsibility of development/QA team)
 
 **Phase 2: Frontend Read UI**
-1.  Implement Registration List View for Admins/Organizers.
-2.  Implement Registration Detail View.
-3.  Integrate with backend APIs from Phase 1.
+1.  Implement Registration List View for Admins/Organizers. **(COMPLETED)**
+2.  Implement Registration Detail View. **(COMPLETED)**
+3.  Integrate with backend APIs from Phase 1. **(COMPLETED)**
 
 **Phase 3: Backend Update/Action APIs**
 1.  Implement `PATCH /api/registrations/:registrationId/status`.

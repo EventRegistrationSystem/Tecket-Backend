@@ -620,6 +620,32 @@ This section provides a summary of important Data Transfer Objects (DTOs) used i
 
 ---
 
+## 4.4. Admin Registration Management Views (Implemented)
+
+The following frontend views have been implemented to integrate with the completed backend read APIs for registration management:
+
+*   **Event-Specific Registration List View:**
+    *   **Component:** `src/views/admin/Registration/EventRegistrationListView.vue`
+    *   **Purpose:** Displays a paginated, filterable, and searchable list of registrations for a specific event.
+    *   **Backend API:** `GET /api/events/:eventId/registrations` (See section 3.6.1)
+    *   **Route:** `/admin/events/:eventId/registrations` (Name: `AdminEventRegistrationList`)
+
+*   **System-Wide Registration List View (Admin Only):**
+    *   **Component:** `src/views/admin/Registration/SystemRegistrationListView.vue`
+    *   **Purpose:** Displays a paginated, filterable, and searchable list of all registrations across the system.
+    *   **Backend API:** `GET /api/registrations/admin/all-system-summary` (See section 3.6.2)
+    *   **Route:** `/admin/registrations` (Name: `AdminSystemRegistrationList`)
+
+*   **Detailed Registration Information View:**
+    *   **Component:** `src/views/admin/Registration/RegistrationDetailsView.vue`
+    *   **Purpose:** Displays comprehensive details for a single registration, including attendees, responses, and purchase information.
+    *   **Backend API:** `GET /api/registrations/:registrationId` (See section 3.6.3)
+    *   **Route:** `/admin/registrations/:registrationId` (Name: `AdminRegistrationDetail`)
+
+These views are integrated into the Admin Layout and accessible via the defined routes and links from other admin pages (e.g., Event List, Admin Sidebar).
+
+---
+
 ### 3.6. Registration Management (Admin/Organizer Views - Read APIs)
 
 This section details the backend APIs implemented as part of Phase 1 for viewing and querying registration data, primarily for Administrator and Event Organizer roles.

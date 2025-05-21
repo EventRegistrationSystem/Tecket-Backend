@@ -21,7 +21,7 @@ This document outlines the core workflows that Administrators (Admins) and Event
     5.  Use a search bar to find specific registrations by a participant's name or email.
 *   **Underlying API & Current Status:**
     *   **API Endpoint:** `GET /api/events/:eventId/registrations`
-    *   **Current Status:** Implemented (Phase 1). The backend (service, controller, route) for fetching this summarized, filterable, and searchable data is in place.
+    *   **Current Status:** Implemented (Phase 1 Backend, Phase 2 Frontend UI). The backend (service, controller, route) for fetching this summarized, filterable, and searchable data is in place, and the corresponding frontend UI component has been implemented.
 
 ## 2. Reviewing Detailed Registration Information
 
@@ -38,7 +38,7 @@ This document outlines the core workflows that Administrators (Admins) and Event
         *   Basic payment information (e.g., payment intent status, amount).
 *   **Underlying API & Current Status:**
     *   **API Endpoint:** `GET /api/registrations/:registrationId`
-    *   **Current Status:** Backend Enhanced (Phase 1). The endpoint has been reviewed and updated to ensure it includes comprehensive details such as all attendees, their questionnaire responses, full ticket purchase information, and payment status.
+    *   **Current Status:** Backend Enhanced (Phase 1), Frontend UI Implemented (Phase 2). The endpoint has been reviewed and updated to ensure it includes comprehensive details such as all attendees, their questionnaire responses, full ticket purchase information, and payment status, and the corresponding frontend UI component has been implemented.
 
 ## 3. Updating Registration Status
 
@@ -97,6 +97,6 @@ This document outlines the core workflows that Administrators (Admins) and Event
     4.  A global search function would also be available.
 *   **Underlying API & Current Status:**
     *   **API Endpoint:** `GET /api/admin/registrations` (Implemented as `GET /api/registrations/admin/all-system-summary`)
-    *   **Current Status:** Implemented (Phase 1). The backend (service, controller, route) for fetching a system-wide, filterable, and searchable list of registration summaries for administrators is in place.
+    *   **Current Status:** Implemented (Phase 1 Backend, Phase 2 Frontend UI). The backend (service, controller, route) for fetching a system-wide, filterable, and searchable list of registration summaries for administrators is in place, and the corresponding frontend UI component has been implemented.
 
 These workflows represent the key interactions an administrator or event organizer would have with the registration management module, evolving as more features are implemented according to the development plan.

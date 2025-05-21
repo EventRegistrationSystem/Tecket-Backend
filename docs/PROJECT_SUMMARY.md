@@ -155,6 +155,12 @@ Provides the user interface for interacting with the Event Registration System b
     *   `EventDetailsView.vue` now fetches full event details (including tickets and questions) and initializes the registration store.
     *   Registration step views (`TicketSelectionFormView.vue`, `PersonalInfoFormView.vue`, `QuestionnaireFormView.vue`, `ReviewFormView.vue`) refactored to use `registrationStore` and handle dynamic data.
     *   New views created: `RegistrationSuccessView.vue` and `RegistrationPendingPaymentView.vue`.
+*   **Admin Registration Management Views (Implemented):**
+    *   Implemented frontend views for the completed backend read APIs:
+        *   Event-Specific Registration List (`src/views/admin/Registration/EventRegistrationListView.vue`)
+        *   System-Wide Registration List (`src/views/admin/Registration/SystemRegistrationListView.vue`)
+        *   Detailed Registration View (`src/views/admin/Registration/RegistrationDetailsView.vue`)
+    *   These views are integrated into the Admin Layout and routing.
 *   **User Experience Enhancements:**
     *   Added a "Cancel Registration" button to the `StepIndicator.vue` component, allowing users to exit the flow and reset registration state.
 *   **Router Refactoring:**
