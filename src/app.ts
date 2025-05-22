@@ -12,6 +12,7 @@ import paymentRoutes from './routes/paymentRoutes';
 
 import swaggerUi from 'swagger-ui-express';
 import specs from './config/swagger';
+import emailRoutes from './routes/emailRoutes';
 
 // Importing middlewares
 const app = express();
@@ -33,6 +34,7 @@ app.use(cors({
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
 
 // Use routes
+app.use('/api', emailRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/user', userRoutes);
