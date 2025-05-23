@@ -22,7 +22,7 @@ export class EventQuestionService {
             if (eventExists === 0) {
                 throw new NotFoundError('Event not found');
             }
-            return; 
+            return;
         }
 
         const event = await prismaClient.event.findUnique({
@@ -51,7 +51,11 @@ export class EventQuestionService {
         return prismaClient.eventQuestions.findMany({
             where: { eventId },
             include: {
-                question: true, // Include the details of the linked global Question
+                question: { // Include the details of the linked global Question
+                    include: {
+                        options: true // Also include the options for that question
+                    }
+                },
                 _count: {
                     select: { responses: true }
                 }
@@ -95,6 +99,16 @@ export class EventQuestionService {
                         questionType: data.questionType || 'TEXT',
                         category: data.category,
                         validationRules: data.validationRules || undefined,
+                        // Conditionally create options if the type is DROPDOWN and options are provided
+                        options: (data.questionType === 'DROPDOWN' && data.options && data.options.length > 0)
+                            ? {
+                                create: data.options.map(opt => ({
+                                    optionText: opt.optionText,
+                                    displayOrder: opt.displayOrder
+                                    // id from opt is ignored here as these are new options for a new question
+                                }))
+                            }
+                            : undefined
                     }
                 });
                 questionId = newGlobalQuestion.id;
