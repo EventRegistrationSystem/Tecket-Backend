@@ -51,7 +51,7 @@ This document outlines the core workflows that Administrators (Admins) and Event
     4.  Confirm the change, possibly with a note or reason if the UI supports it.
 *   **Underlying API & Current Status:**
     *   **API Endpoint:** `PATCH /api/registrations/:registrationId/status`
-    *   **Current Status:** Planned for **Phase 3**. The existing `RegistrationService.cancelRegistration` method handles one specific status update (`CANCELLED`), but a more generalized endpoint for various status updates by organizers/admins is part of future work.
+    *   **Current Status:** Backend Implemented (Phase 3). The endpoint allows Admins and authorized Organizers to update the registration status (e.g., to CONFIRMED, CANCELLED). It includes logic for ticket stock adjustment on cancellation. Frontend UI integration is pending.
 
 ## 4. Making Minor Corrections to Attendee Information
 

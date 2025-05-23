@@ -173,7 +173,7 @@ This will likely involve enhancements to `RegistrationService`, `RegistrationCon
 3.  Integrate with backend APIs from Phase 1. **(COMPLETED)**
 
 **Phase 3: Backend Update/Action APIs**
-1.  Implement `PATCH /api/registrations/:registrationId/status`.
+1.  Implement `PATCH /api/registrations/:registrationId/status`. **(Backend DONE)**
 2.  Define scope and implement `PUT /api/registrations/:registrationId/attendees/:attendeeId` (or similar for limited edits).
 3.  Thoroughly test.
 
