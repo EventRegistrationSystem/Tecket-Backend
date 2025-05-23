@@ -1,4 +1,4 @@
-import express from 'express';
+import express from 'express'; // Reverted import
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 
@@ -12,6 +12,7 @@ import paymentRoutes from './routes/paymentRoutes';
 
 import swaggerUi from 'swagger-ui-express';
 import specs from './config/swagger';
+import emailRoutes from './routes/emailRoutes';
 
 // Importing middlewares
 const app = express();
@@ -26,13 +27,14 @@ app.use(cookieParser());  // Middleware to parse cookies
 // Enable CORS for all routes
 app.use(cors({
     origin: '*', // Allow all origins (for development purposes only)
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
 }));
 
 // Swagger UI route
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
 
 // Use routes
+app.use('/api', emailRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/user', userRoutes);
@@ -40,6 +42,5 @@ app.use('/api/registrations', registrationRoutes);
 // app.use('/api/payments', paymentRoutes);
 
 app.use('/api', ticketRoutes);
-
 
 export default app;

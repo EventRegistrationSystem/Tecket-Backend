@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { RegistrationController } from '../controllers/registrationController';
-import { authenticate, optionalAuthenticate, validateRequest } from '../middlewares/authMiddlewares'; 
+import { authenticate, optionalAuthenticate, validateRequest, authorize } from '../middlewares/authMiddlewares'; // Added authorize
 import { registrationValidationSchema } from '../validation/registrationValidation'; 
 
 const router = Router();
@@ -398,5 +398,107 @@ router.patch(
     RegistrationController.cancelRegistration // Add the new controller method
 );
 
+/**
+ * @openapi
+ * /registrations/admin/all-system-summary:
+ *   get:
+ *     summary: (Admin) Get all registrations system-wide
+ *     description: Retrieve a paginated list of all registration summaries across all events. Requires ADMIN role.
+ *     tags: [Registrations, Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Number of items per page
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search term for primary registrant name/email or attendee names/email
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           $ref: '#/components/schemas/RegistrationStatus' 
+ *         description: Filter by registration status (CONFIRMED, PENDING, CANCELLED)
+ *       - in: query
+ *         name: ticketId
+ *         schema:
+ *           type: integer
+ *         description: Filter by registrations containing a specific ticket type
+ *       - in: query
+ *         name: eventId
+ *         schema:
+ *           type: integer
+ *         description: Filter by a specific event ID
+ *       - in: query
+ *         name: userId
+ *         schema:
+ *           type: integer
+ *         description: Filter by registrations made by a specific user ID
+ *       - in: query
+ *         name: participantId
+ *         schema:
+ *           type: integer
+ *         description: Filter by registrations involving a specific primary participant ID
+ *     responses:
+ *       200:
+ *         description: A list of all registration summaries
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object 
+ *                     properties:
+ *                       registrationId:
+ *                         type: integer
+ *                       registrationDate:
+ *                         type: string
+ *                         format: date-time
+ *                       eventName:
+ *                         type: string
+ *                       primaryParticipantName:
+ *                         type: string
+ *                       primaryParticipantEmail:
+ *                         type: string
+ *                       numberOfAttendees:
+ *                         type: integer
+ *                       registrationStatus:
+ *                         $ref: '#/components/schemas/RegistrationStatus'
+ *                       totalAmountPaid:
+ *                         type: number
+ *                         nullable: true
+ *                 pagination:
+ *                   $ref: '#/components/schemas/Pagination'
+ *       400:
+ *         description: Invalid input parameters
+ *       401:
+ *         description: Unauthorized - Authentication required
+ *       403:
+ *         description: Forbidden - User does not have ADMIN role
+ *       500:
+ *         description: Server error
+ */
+router.get(
+    '/admin/all-system-summary',
+    authenticate,
+    authorize('ADMIN'),
+    RegistrationController.getAdminAllRegistrations
+);
 
 export default router;

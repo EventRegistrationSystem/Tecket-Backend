@@ -1,6 +1,6 @@
 # Project Summary: Event Registration System Backend
 
-**Last Updated:** 10/05/2025
+**Last Updated:** 21/05/2025
 
 ## 1. Project Purpose and Core Functionalities
 
@@ -8,24 +8,37 @@
 To provide a robust backend API for managing events, registrations, tickets, and associated questionnaires. The system enables event organizers to create and manage events (both free and paid) and allows participants (registered users or guests) to browse, register, and complete event-specific questionnaires. Secure payment processing is planned for paid events.
 
 **Core Functionalities:**
-*   **User Management:** Authentication (JWT-based), authorization (Role-Based Access Control: PARTICIPANT, ORGANIZER, ADMIN), profile management (get/update), password management.
-*   **Event Management:** Full CRUD operations, status management (draft, published, cancelled, completed), support for free/paid events, advanced filtering/search, role-based visibility, dynamic question updates.
-*   **Ticket Management:** Creation/management of ticket types per event, pricing, availability checks, sales periods, validation against sold quantities, ownership authorization checks.
+*   **User Management & Authentication:**
+    *   JWT-based authentication (access and refresh tokens). Refresh tokens stored in secure HttpOnly cookies.
+    *   Role-Based Access Control (PARTICIPANT, ORGANIZER, ADMIN).
+    *   Profile management (get/update), password management.
+    *   `authMiddlewares.ts` improved: `optionalAuthenticate` now correctly triggers a 401 for expired/invalid tokens (to enable frontend refresh flow), and `authenticate` correctly throws `AuthenticationError` for missing tokens.
+    *   Comprehensive ADMIN privilege system implemented across services, allowing ADMINs to bypass ownership checks.
+    *   **Admin User Management (Backend):** Full CRUD operations for managing user accounts by ADMINs implemented (backend services and routes).
+*   **Event Management:**
+    *   Full CRUD operations, status management, support for free/paid events, advanced filtering/search, role-based visibility.
+    *   `EventService.updateEvent` now handles monolithic updates for associated tickets and questions by orchestrating calls to `TicketService` and `EventQuestionService` within a transaction. This was a strategic reversion to simplify frontend integration while retaining backend modularity.
+*   **Ticket Management:**
+    *   Dedicated service (`TicketService`) and granular API endpoints (`/api/events/:eventId/tickets/*`) for CRUD operations, pricing, availability, sales periods, and validation.
+    *   `TicketService` methods are transaction-aware (accepting Prisma `tx` client) for use by `EventService`.
+    *   ADMIN privileges and ownership checks are enforced.
+*   **Questionnaire Management (Event-Specific Questions):**
+    *   Dedicated service (`EventQuestionService`) and granular API endpoints (`/api/events/:eventId/questions/*`) for managing links between events and global questions, including `isRequired` and `displayOrder`.
+    *   `EventQuestionService` handles find-or-create logic for global `Question` entities and is transaction-aware.
+    *   ADMIN privileges and ownership checks are enforced.
+    *   Joi validation for question link DTOs implemented.
 *   **Registration System:**
-    *   Supports both registered users and guest participants, linking participants to events.
+    *   Supports registered users and guests, linking participants to events.
     *   Handles conditional status (`PENDING` for paid, `CONFIRMED` for free).
-    *   **Refactored to support multiple participants (attendees) and multiple ticket types per registration.** This involved adding the `Attendee` and `PurchaseItem` models, updating the `Purchase` and `Ticket` models, and refactoring the `createRegistration` service method to handle arrays of participants and tickets, create `Attendee` and `PurchaseItem` records, and link responses correctly.
-    *   Retrieval (`GET /registrations`, `GET /registrations/:id`) implemented with authorization and updated includes for `Attendee` and `PurchaseItem` data.
-    *   **Cancellation implemented** (`PATCH /registrations/:registrationId`) allowing owner/admin to cancel, including decrementing ticket count for paid events based on `PurchaseItem` quantities.
-    *   **Validation re-enabled** for `POST /registrations` using Joi, including custom validation for matching participant count to ticket quantity.
-*   **Questionnaire Management:** Custom questions per event, response collection from participants during registration, now linked via the `Attendee` model.
-*   **Payment Processing:** **(In Progress - Stripe Backend Setup)**
-    *   Secure handling of payments for paid event tickets using Stripe.
-    *   Creating Stripe Payment Intents (`POST /api/payments/create-intent`) is implemented and manually tested for guest and logged-in users. Authorization correctly uses JWT for authenticated users (via `optionalAuthenticate` middleware) and temporary payment tokens for guests.
-    *   **Guest Payment Token System:** Implemented and manually tested (generation, hashing, storage, expiry, validation during payment intent creation).
-    *   **Webhook Handling:** Webhook handler (`POST /api/payments/webhook/stripe`) for `payment_intent.succeeded` and `payment_intent.payment_failed` events is implemented and has been manually tested, correctly updating `Payment` and `Registration` statuses.
-    *   **Webhook Signature Verification:** Middleware implemented, reviewed, corrected, and manually tested.
-    *   **Raw Body Parsing for Webhooks:** Correctly configured in `app.ts` using `express.raw()` for the specific webhook route.
+    *   **Refactored for multiple participants (attendees) and multiple ticket types per registration.**
+    *   Retrieval and cancellation implemented with ADMIN/ownership checks.
+    *   Joi validation for registration payloads.
+    *   **Admin/Organizer Registration Viewing (Backend):** Implemented backend APIs for admins/organizers to view registration lists for specific events (`GET /api/events/:eventId/registrations`), view system-wide registration summaries (`GET /api/registrations/admin/all-system-summary`), and retrieve detailed information for a single registration (`GET /api/registrations/:registrationId` enhanced for full details).
+*   **Payment Processing (Stripe):** **(Core Backend Functionality Implemented & Manually Tested; Further Development Postponed)**
+    *   Core logic for creating Stripe Payment Intents and handling webhooks for payment success/failure is in place and tested.
+    *   Guest Payment Token system implemented.
+    *   Further enhancements (e.g., refund processing) and full frontend integration are postponed.
+*   **Notifications:** Basic infrastructure not yet implemented; major notification features are postponed.
 *   **Reporting & Analytics:** (Planned) Data collection to support future reporting for organizers/admins.
 
 ## 2. Technology Stack
@@ -35,8 +48,8 @@ To provide a robust backend API for managing events, registrations, tickets, and
 *   **Framework:** Express.js
 *   **Database:** MySQL
 *   **ORM:** Prisma
-*   **Authentication:** JWT (JSON Web Tokens) with Refresh Tokens (stored in HTTP-only cookies), bcrypt for password hashing.
-*   **Validation:** Joi (Schema validation used in middleware).
+*   **Authentication:** JWT (access & HttpOnly refresh tokens), bcrypt. Refresh token rotation implemented. `authMiddlewares.ts` enhanced for better error propagation for expired/missing tokens.
+*   **Validation:** Joi (schema validation for request payloads). Partially re-enabled for some routes.
 *   **Testing:** Jest (Unit tests with Prisma/bcrypt mocks).
 *   **Payment Gateway:** Stripe (using Stripe Node.js SDK)
 
@@ -45,8 +58,8 @@ To provide a robust backend API for managing events, registrations, tickets, and
 **Architecture:**
 Layered Architecture:
 1.  **Routes (`src/routes/`):** Define API endpoints, apply middleware (authentication, validation).
-2.  **Controllers (`src/controllers/`):** Handle HTTP request/response cycle, orchestrate service calls.
-3.  **Services (`src/services/`):** Encapsulate core business logic, interact with the data layer.
+2.  **Controllers (`src/controllers/`):** Handle HTTP request/response cycle, pass user context (ID, role) to services. Error handling standardized in `EventController` to return specific HTTP status codes for custom errors.
+3.  **Services (`src/services/`):** Encapsulate core business logic. `EventService` orchestrates complex updates. `TicketService` and `EventQuestionService` manage their respective domains and are transaction-aware. All services implement ADMIN privilege bypass for ownership checks.
 4.  **Data Layer (Prisma - `prisma/schema.prisma`):** Defines database models and handles database interactions.
 
 **Key Database Entities (`prisma/schema.prisma`):**
@@ -125,26 +138,69 @@ Provides the user interface for interacting with the Event Registration System b
 *   Inconsistent use of `API_BASE_URL` vs `import.meta.env.VITE_API_BASE_URL` in older API functions (mostly resolved).
 *   Duplication of ticket-related API functions (resolved by removing from `tickets.js`).
 *   Potential endpoint mismatches for `/locations`, `/events/:eventId/attendees`, and admin user management endpoints (requires backend verification).
-*   Missing API functions for signup, registration, payment intent creation, and questionnaire submission (need to be implemented).
 *   Error handling in API calls could be more standardized and user-friendly.
 *   Admin user management backend routes are currently commented out, preventing full frontend integration.
 
+**Recent Frontend Developments (as of 2025-05-19):**
+*   **Event Registration Flow (Initial Implementation):**
+    *   Successfully integrated the creation flow for event registrations (paid events focus, payment processing deferred).
+    *   Users can navigate from event details, select tickets, provide personal information for multiple participants, and answer dynamic event-specific questionnaires.
+    *   A review page summarizes all information before submission.
+    *   Submission calls the backend `POST /api/registrations` endpoint.
+    *   Navigation to success or pending payment pages based on event type (free/paid).
+*   **State Management for Registration:**
+    *   Created `src/store/registrationStore.js` (Pinia) to manage state across the multi-step registration process (event details, selected tickets, participant info, questionnaire responses).
+    *   Created `src/api/registrationServices.js` for API calls related to registration.
+*   **View Refactoring for Registration:**
+    *   `EventDetailsView.vue` now fetches full event details (including tickets and questions) and initializes the registration store.
+    *   Registration step views (`TicketSelectionFormView.vue`, `PersonalInfoFormView.vue`, `QuestionnaireFormView.vue`, `ReviewFormView.vue`) refactored to use `registrationStore` and handle dynamic data.
+    *   New views created: `RegistrationSuccessView.vue` and `RegistrationPendingPaymentView.vue`.
+*   **User Experience Enhancements:**
+    *   Added a "Cancel Registration" button to the `StepIndicator.vue` component, allowing users to exit the flow and reset registration state.
+*   **Router Refactoring:**
+    *   Standardized all route component imports in `src/router/index.js` to use dynamic imports (lazy loading) for better performance.
+    *   Modularized the router configuration:
+        *   Created `src/router/modules/` directory.
+        *   Split routes into logical files: `publicRoutes.js`, `authRoutes.js`, `registrationRoutes.js`, `adminRoutes.js`, `userProfileRoutes.js`.
+        *   Created `src/router/index-1.js` as the new main router file, importing these modules (original `index.js` kept as backup).
+*   **Admin Dashboard Cleanup:**
+    *   Removed the top-level "Tickets" management link from the admin sidebar.
+    *   Removed associated routes from the router.
+    *   Associated view files for this top-level ticket management were manually deleted.
+*   **Bug Fixes & Debugging:**
+    *   Addressed a "Maximum recursive updates" warning in `PersonalInfoFormView.vue`.
+    *   Investigated and clarified that missing questionnaire questions for a test event were due to no questions being associated with that event in the backend data.
+    *   Improved rendering of questionnaire questions with a fallback for unrecognized types.
+
 ## 5. Implemented Features (as of Sprint 4, Week 1)
 
-*   **Authentication:** User registration, login, JWT generation/validation, refresh tokens, role-based access control middleware (`src/middlewares/authMiddlewares.ts`).
-*   **User Profile:** Fetching, updating user profiles, and password updates implemented and unit tested (`src/controllers/userController.ts`, `src/services/userServices.ts`, `src/__tests__/unit/userService.test.ts`).
-*   **Event Management:** Full CRUD, status transitions, free/paid event distinction (`isFree` flag), role-based visibility and filtering. Refined logic for updating associated questions (`src/controllers/eventController.ts`, `src/services/eventServices.ts`). Enhanced unit test coverage (`src/__tests__/unit/eventService.test.ts`).
-*   **Ticket Management:** CRUD for ticket types associated with events, pricing, availability checks, sales periods, validation against sold quantities, ownership authorization checks. Routes refactored for consistency (`/events/:eventId/tickets/:ticketId`). Ownership authorization added to service layer (`src/controllers/ticketController.ts`, `src/services/ticketServices.ts`). Good unit test coverage (`src/__tests__/unit/ticketService.test.ts`).
+*   **Authentication & Authorization:**
+    *   User registration, login, JWT generation/validation, HttpOnly refresh tokens with rotation.
+    *   Role-based access control middleware (`authenticate`, `authorize`).
+    *   `optionalAuthenticate` improved to return 401 for expired/invalid tokens.
+    *   Comprehensive ADMIN privilege system implemented across services.
+    *   **Admin User Management (Backend):** Backend CRUD operations for users by ADMINs completed.
+*   **User Profile:** Fetching, updating user profiles, and password updates.
+*   **Event Management:**
+    *   Full CRUD, status transitions, free/paid event distinction, role-based visibility.
+    *   `EventService.createEvent` handles initial creation of event with tickets and questions.
+    *   `EventService.updateEvent` refactored to manage monolithic updates of an event including its tickets and questions by orchestrating calls to transaction-aware `TicketService` and `EventQuestionService`.
+*   **Ticket Management:**
+    *   Dedicated `TicketService` and granular API for CRUD, pricing, availability, etc.
+    *   Methods made transaction-aware.
+*   **Questionnaire Management (Event-Specific Questions):**
+    *   Dedicated `EventQuestionService` and granular API for managing event-question links.
+    *   Handles find-or-create for global questions.
+    *   Methods made transaction-aware.
+    *   Joi validation for question link DTOs added.
 *   **Registration System:**
-    *   Creation implemented for guests/users.
-    *   **Refactored to support multiple participants (attendees) and multiple ticket types per registration.** Includes `Attendee` and `PurchaseItem` models. Manually tested for guest and logged-in user scenarios.
-    *   `optionalAuthenticate` middleware now used for `POST /api/registrations` to securely derive `userId` from JWT for authenticated users. `CreateRegistrationDto` and Joi validation updated to remove `userId` from request body.
-    *   Handles conditional status (`PENDING` for paid, `CONFIRMED` for free).
-    *   Retrieval (`GET /registrations`, `GET /registrations/:id`) implemented with authorization and updated includes.
-    *   **Cancellation implemented** (`PATCH /registrations/:registrationId`) allowing owner/admin to cancel, including decrementing ticket count based on `PurchaseItem` quantities.
-    *   **Validation re-enabled** for `POST /registrations` using Joi, including custom validation for matching participant count to ticket quantity.
-*   **Questionnaire Management:** Custom questions per event, response collection from participants during registration, now linked via `Attendee`.
-*   **Payment Processing:** **(Core Backend Functionality Manually Tested)**
+    *   Refactored for multiple participants (attendees) and multiple ticket types per registration.
+    *   CRUD operations with ADMIN/ownership checks. Joi validation for payloads.
+    *   **Registration Management (Admin/Organizer View - Backend Read APIs):**
+        *   `GET /api/events/:eventId/registrations`: Implemented for admins/organizers to list registration summaries for a specific event with filtering and pagination.
+        *   `GET /api/registrations/admin/all-system-summary`: Implemented for admins to list all registration summaries system-wide with comprehensive filtering and pagination (serves the purpose of planned `/api/admin/registrations`).
+        *   `GET /api/registrations/:registrationId`: Enhanced to return full registration details, including all attendees, their questionnaire responses, and purchase/ticket information.
+*   **Payment Processing (Stripe):** **(Core Backend Functionality Implemented & Manually Tested)**
     *   Added Stripe dependencies and configured environment variables.
     *   Updated `Payment` and `Purchase` models in Prisma schema and migrated database.
     *   Created payment types, service, controller, and routes.
@@ -166,44 +222,59 @@ Provides the user interface for interacting with the Event Registration System b
     *   Initial unit tests for `PaymentService` have been created, but are currently encountering Jest mocking/hoisting issues. Further work on these specific tests is temporarily paused.
 *   **Admin Features:** Admin user management endpoints are defined in routes; implementation is currently in progress by Steven.
 *   **Integration Testing:** No integration tests currently exist.
-*   **Error Handling:** Could be standardized further across all services/controllers. Webhook error handling could be more robust (e.g., retry mechanisms, alerting).
-*   **Logging:** Minimal logging implemented.
+*   **Error Handling:** Standardized in `EventController`. `authMiddlewares` improved. Global error handler implementation is pending.
+*   **Logging:** Basic `console.log` and `console.error` used.
 *   **Image Uploads:** No functionality for handling image uploads.
-*   **Notifications:** No email or other notification system implemented.
-*   **Participant Service:** Minimal implementation (`findOrCreateParticipant` only). Lacks dedicated get/update methods.
-*   **Payment Module:** Core manual API flows for registration, payment intent creation, and webhook handling (success/failure) have been tested. Still requires comprehensive unit and integration testing, and frontend integration. Webhook handler needs refinement for more event types if necessary. Currency is currently hardcoded ('aud'). Guest payment token invalidation after use is not yet implemented (logic present but commented out in `PaymentService`).
+*   **Notifications (Core):** Postponed.
+*   **Participant Service:** Minimal implementation.
+*   **Payment Module:** Core backend logic for Stripe payment intents and webhooks implemented and manually tested. Further development and full frontend integration postponed. Refund logic postponed.
 
-## 6. Immediate Next Steps & Future Development Plan
+## 6. Immediate Next Steps & Future Development Plan (Revised 2025-05-19)
 
-**Current Focus (Sprint 4 - Updated):**
-*   **Manually Test Payment Flow:** Payment intent creation (guest and user) and webhook handling (`payment_intent.succeeded`, `payment_intent.payment_failed`) using Stripe CLI and mock UI **COMPLETED**.
-*   **Unit Testing:** 
-    *   `RegistrationService` unit tests: **COMPLETED & PASSING**.
-    *   `PaymentService` unit tests: Fix Jest mocking issues and complete tests. (High Priority - Currently Paused)
-*   **Implement Refund Logic:** Add refund processing (via Stripe API) to the `cancelRegistration` method. (High Priority)
-*   **Frontend Integration:** Work with frontend to integrate Stripe Elements and the payment backend endpoints. (Very High Priority)
+**Current Development Focus (High Priority):**
+1.  **Registration Management (Admin/Organizer - Backend & Frontend):**
+    *   **Backend:**
+        *   **Read APIs (View/Search): COMPLETED.** Endpoints for admins/organizers to view and search registration details (list for event, list all for admin, get by ID) are implemented.
+        *   **Next Backend Steps:** Implement update/action APIs (e.g., update status, limited edits, export).
+    *   **Frontend:** Develop UI components for these registration management features, starting with integrating the completed read APIs.
+2.  **Support New Question Types (Backend & Frontend):**
+    *   **Backend:** Update Prisma schema (`QuestionType` enum, add `options` field to `Question` model for choices). Modify services and DTOs to handle at least one new type (e.g., multiple-choice/dropdown) including storage and retrieval of options.
+    *   **Frontend:** Update event creation/question management UI to allow organizers to define new question types and their options. Update registration questionnaire form to render these new types.
+3.  **Frontend Static Data Cleanup:**
+    *   **Frontend:** Systematically replace mock data in frontend components with live API calls to the backend.
+4.  **Backend Joi Validations:**
+    *   Re-enable `validateRequest(createEventSchema)` (events) and `validateRequest(addEventQuestionLinkSchema)` (event questions).
+    *   Create and apply Joi schemas for `updateEvent` and `updateEventStatus` payloads.
+5.  **Finalize Refresh Token Flow (Frontend/Backend):**
+    *   Continue debugging to ensure robust and seamless token refresh when access tokens expire.
 
-**Future Development Plan (Prioritized based on existing Frontend):**
-1.  **Admin User Management:** Implementation in progress by team member. (High Priority)
-2.  **Email Notifications:** Implement email sending for key user flows (registration, cancellation, password reset). (High Priority)
-3.  **Integration Testing:** Add API-level tests for key user flows (registration, payment). (Medium Priority - Ongoing)
-4.  **Deployment:** Plan and begin setup on Render (Web Service, DB, Env Vars, Migrations). (Medium Priority - Ongoing)
-6.  **Reporting System (Basic):** Implement basic organizer reports if required by admin dashboard, otherwise potentially defer. (Low/Medium Priority)
-7.  **Refine API & Support Frontend:** Address any specific data needs or endpoint adjustments identified during frontend refinement. (Ongoing)
-8.  **Advanced Features:** Advanced reporting, image uploads, etc. (Lower Priority)
+**Postponed / Lower Priority (Based on Client Feedback):**
+*   Advanced Payment Features (e.g., Refund Processing via Stripe API).
+*   PaymentService Unit Tests (beyond initial setup).
+*   Core Email Notification System.
+
+**Ongoing & Future Development:**
+*   **Admin User Management (Frontend Integration):** Integrate frontend UI with completed backend admin user management APIs.
+*   **Global Error Handler (Backend):** Re-implement a robust global error handler in `app.ts`.
+*   **Integration Testing:** Add API-level tests for key user flows.
+*   **Deployment:** Plan and execute deployment to Render.
+*   **Reporting System (Basic).**
+*   **Refine API & Support Frontend (General).**
+*   **Advanced Features (Image uploads, etc.).**
 
 ## 7. Critical Design Decisions & Tradeoffs
 
 *   **Participant Model:** Using a single `Participant` model linked optionally to `User` supports guest registration.
 *   **Explicit `isFree` Flag:** Added `isFree` boolean to `Event` model for clarity.
 *   **Conditional Registration Status:** Using `PENDING` for paid events until payment is confirmed via webhook.
-*   **Transaction-Based Operations:** Using Prisma transactions for multi-entity operations (event creation, registration, event update, registration cancellation, webhook processing).
-*   **Multi-Level Validation:** Validation at route middleware (Joi), service layer (business rules), and database constraints.
-*   **JWT Authentication:** Using JWT with refresh tokens stored in HTTP-only cookies for logged-in users.
-*   **Ownership Authorization:** Implemented primarily in the service layer by passing `userId` and checking against resource owner IDs.
+*   **Transaction-Based Operations:** Consistent use of Prisma transactions for complex CUD operations.
+*   **Multi-Level Validation:** Route middleware (Joi), service layer (business rules), database constraints.
+*   **JWT Authentication:** Access and HttpOnly refresh tokens. Refresh token rotation in place. Middleware improved for handling expired tokens.
+*   **Ownership Authorization & ADMIN Privileges:** Standardized across services: ORGANIZERs own resources, ADMINs have bypass privileges.
 *   **Attendee Model:** Explicitly linking Registration and Participant via `Attendee` provides a clear way to manage individual attendees and their responses.
 *   **PurchaseItem Model:** Decoupling ticket details from the main `Purchase` via `PurchaseItem` allows a single purchase to include multiple ticket types.
-*   **Guest Payment Authorization:** Using temporary, hashed, expiring tokens stored in the `Purchase` record to authorize payment intent creation for guests.
+*   **Guest Payment Authorization:** Using temporary, hashed, expiring tokens for guest payment intent creation.
+*   **Event Update Strategy:** Reverted `EventService.updateEvent` to a monolithic style (orchestrating calls to specialized, transaction-aware services for tickets/questions) to simplify frontend integration, while retaining granular APIs.
 
 ## 8. Environment Setup
 
