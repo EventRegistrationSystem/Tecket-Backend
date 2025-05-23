@@ -1,4 +1,4 @@
-import { Registration, UserRole, Prisma, RegistrationStatus, Participant, Attendee, Response as PrismaResponse, Purchase, Ticket, Event } from '@prisma/client'; // Import necessary models
+import { Registration, UserRole, Prisma, RegistrationStatus, Participant, Attendee, Response as PrismaResponse, Purchase, Ticket, Event, QuestionType } from '@prisma/client'; // Import necessary models, Added QuestionType
 import { prisma } from '../config/prisma';
 // DTO and types
 import {
@@ -87,7 +87,15 @@ export class RegistrationService {
             where: { id: eventId },
             include: {
                 tickets: (tickets && tickets.length > 0) ? { where: { id: { in: tickets.map(t => t.ticketId) } } } : undefined,
-                eventQuestions: { include: { question: true } }
+                eventQuestions: {
+                    include: {
+                        question: {
+                            include: {
+                                options: true // Ensure options are fetched for questions
+                            }
+                        }
+                    }
+                }
             }
         });
 
@@ -176,6 +184,35 @@ export class RegistrationService {
             for (const providedEqId of providedEqIds) {
                 if (!eventQuestionMap.has(providedEqId)) {
                     throw new ValidationError(`Invalid event question ID ${providedEqId} provided for participant ${participant.firstName} ${participant.lastName}.`);
+                }
+
+                // Validate DROPDOWN question responses
+                const eventQuestion = eventQuestionMap.get(providedEqId)!; // We've confirmed it exists
+                if (eventQuestion.question.questionType === QuestionType.DROPDOWN) {
+                    const responseForQuestion = participant.responses.find(r => r.eventQuestionId === providedEqId);
+                    if (responseForQuestion) { // Only validate if a response is provided
+                        const responseText = responseForQuestion.responseText;
+                        const validOptions = eventQuestion.question.options;
+
+                        if (eventQuestion.isRequired && responseText.trim() === '') {
+                            // This case is already handled by the requiredQuestionIds check,
+                            // but an explicit check here for DROPDOWN is fine for clarity if needed.
+                            // For now, relying on the earlier check for empty required responses.
+                        }
+
+                        if (responseText.trim() !== '') { // Only validate non-empty responses against options
+                            if (!validOptions || validOptions.length === 0) {
+                                throw new ValidationError(`Question "${eventQuestion.question.questionText}" is a DROPDOWN type but has no defined options. Cannot validate response "${responseText}".`);
+                            }
+                            const isValidOption = validOptions.some(opt => opt.optionText === responseText);
+                            if (!isValidOption) {
+                                throw new ValidationError(
+                                    `Invalid option "${responseText}" provided for question "${eventQuestion.question.questionText}" for participant ${participant.firstName} ${participant.lastName}. ` +
+                                    `Valid options are: ${validOptions.map(opt => opt.optionText).join(', ')}.`
+                                );
+                            }
+                        }
+                    }
                 }
             }
         }
