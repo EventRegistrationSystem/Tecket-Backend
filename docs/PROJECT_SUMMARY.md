@@ -1,6 +1,6 @@
 # Project Summary: Event Registration System Backend
 
-**Last Updated:** 21/05/2025
+**Last Updated:** 23/05/2025
 
 ## 1. Project Purpose and Core Functionalities
 
@@ -155,6 +155,12 @@ Provides the user interface for interacting with the Event Registration System b
     *   `EventDetailsView.vue` now fetches full event details (including tickets and questions) and initializes the registration store.
     *   Registration step views (`TicketSelectionFormView.vue`, `PersonalInfoFormView.vue`, `QuestionnaireFormView.vue`, `ReviewFormView.vue`) refactored to use `registrationStore` and handle dynamic data.
     *   New views created: `RegistrationSuccessView.vue` and `RegistrationPendingPaymentView.vue`.
+*   **Admin Registration Management Views (Implemented):**
+    *   Implemented frontend views for the completed backend read APIs:
+        *   Event-Specific Registration List (`src/views/admin/Registration/EventRegistrationListView.vue`)
+        *   System-Wide Registration List (`src/views/admin/Registration/SystemRegistrationListView.vue`)
+        *   Detailed Registration View (`src/views/admin/Registration/RegistrationDetailsView.vue`)
+    *   These views are integrated into the Admin Layout and routing.
 *   **User Experience Enhancements:**
     *   Added a "Cancel Registration" button to the `StepIndicator.vue` component, allowing users to exit the flow and reset registration state.
 *   **Router Refactoring:**
@@ -200,6 +206,8 @@ Provides the user interface for interacting with the Event Registration System b
         *   `GET /api/events/:eventId/registrations`: Implemented for admins/organizers to list registration summaries for a specific event with filtering and pagination.
         *   `GET /api/registrations/admin/all-system-summary`: Implemented for admins to list all registration summaries system-wide with comprehensive filtering and pagination (serves the purpose of planned `/api/admin/registrations`).
         *   `GET /api/registrations/:registrationId`: Enhanced to return full registration details, including all attendees, their questionnaire responses, and purchase/ticket information.
+    *   **Registration Management (Admin/Organizer Actions - Backend):**
+        *   `PATCH /api/registrations/:registrationId/status`: Implemented for admins/organizers to update the status of a registration (e.g., CONFIRMED, CANCELLED). Includes logic for adjusting ticket stock on cancellation.
 *   **Payment Processing (Stripe):** **(Core Backend Functionality Implemented & Manually Tested)**
     *   Added Stripe dependencies and configured environment variables.
     *   Updated `Payment` and `Purchase` models in Prisma schema and migrated database.
@@ -235,8 +243,9 @@ Provides the user interface for interacting with the Event Registration System b
 1.  **Registration Management (Admin/Organizer - Backend & Frontend):**
     *   **Backend:**
         *   **Read APIs (View/Search): COMPLETED.** Endpoints for admins/organizers to view and search registration details (list for event, list all for admin, get by ID) are implemented.
-        *   **Next Backend Steps:** Implement update/action APIs (e.g., update status, limited edits, export).
-    *   **Frontend:** Develop UI components for these registration management features, starting with integrating the completed read APIs.
+        *   **Update Status API: COMPLETED.** `PATCH /api/registrations/:registrationId/status` implemented.
+        *   **Next Backend Steps:** Implement other update/action APIs (e.g., limited edits, export).
+    *   **Frontend:** Develop UI components for these registration management features, starting with integrating the completed read APIs and the update status API.
 2.  **Support New Question Types (Backend & Frontend):**
     *   **Backend:** Update Prisma schema (`QuestionType` enum, add `options` field to `Question` model for choices). Modify services and DTOs to handle at least one new type (e.g., multiple-choice/dropdown) including storage and retrieval of options.
     *   **Frontend:** Update event creation/question management UI to allow organizers to define new question types and their options. Update registration questionnaire form to render these new types.
