@@ -1,8 +1,10 @@
 import dotenv from 'dotenv';
 import app from './app';
 import { prisma } from './config/prisma';
+import { initializeEmailTransporter } from './services/emailServices';
 
 dotenv.config();
+
 
 const PORT = process.env.PORT || 3000;
 
@@ -22,4 +24,6 @@ const startServer = async () => {
     }
 };
 
+
+initializeEmailTransporter();
 startServer();
