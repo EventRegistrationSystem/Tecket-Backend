@@ -7,7 +7,8 @@ import {
     ParticipantInput,
     GetRegistrationsQuery,
     GetRegistrationsForEventQuery,
-    GetAdminAllRegistrationsQuery
+    GetAdminAllRegistrationsQuery,
+    UpdateRegistrationStatusDto
 } from '../types/registrationTypes';
 import { ParticipantService } from './participantServices';
 import { AppError, ValidationError, AuthorizationError, NotFoundError } from '../utils/errors';
@@ -15,6 +16,55 @@ import { JwtPayload } from '../types/authTypes';
 import { Decimal } from '@prisma/client/runtime/library';
 import crypto from 'crypto'; // For generating token
 import bcrypt from 'bcrypt'; // For hashing token
+
+// Define args for fetching full registration details, mirroring getRegistrationById's includes
+const registrationFullDetailsArgs = Prisma.validator<Prisma.RegistrationDefaultArgs>()({
+    include: {
+        participant: true,
+        event: {
+            select: {
+                id: true,
+                name: true,
+                startDateTime: true,
+                organiserId: true,
+                isFree: true
+            }
+        },
+        attendees: {
+            include: {
+                participant: true,
+                responses: {
+                    include: {
+                        eventQuestion: {
+                            include: {
+                                question: { select: { id: true, questionText: true, questionType: true } }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        purchase: {
+            include: {
+                items: {
+                    select: {
+                        id: true,
+                        quantity: true,
+                        unitPrice: true,
+                        ticket: {
+                            select: {
+                                id: true,
+                                name: true
+                            }
+                        }
+                    }
+                },
+                payment: true
+            }
+        }
+    }
+});
+type DetailedRegistration = Prisma.RegistrationGetPayload<typeof registrationFullDetailsArgs>;
 
 export class RegistrationService {
     /**
@@ -739,5 +789,82 @@ export class RegistrationService {
                 totalPages: Math.ceil(totalCount / limit)
             }
         };
+    }
+
+    static async updateRegistrationStatus(
+        registrationId: number,
+        dto: UpdateRegistrationStatusDto,
+        requestingUser: JwtPayload
+    ): Promise<DetailedRegistration> {
+        const { status: newStatus } = dto;
+
+        const registrationForAuth = await prisma.registration.findUnique({
+            where: { id: registrationId },
+            include: {
+                event: { select: { id: true, organiserId: true, isFree: true } },
+                purchase: { include: { items: true } }, // For ticket stock adjustment
+            }
+        });
+
+        if (!registrationForAuth) {
+            throw new NotFoundError('Registration not found.');
+        }
+
+        const isAdmin = requestingUser.role === UserRole.ADMIN;
+        const isEventOrganizer = registrationForAuth.event?.organiserId === requestingUser.userId;
+
+        if (!isAdmin && !isEventOrganizer) {
+            throw new AuthorizationError('Forbidden: You do not have permission to update this registration status.');
+        }
+
+        const currentStatus = registrationForAuth.status;
+
+        if (currentStatus === newStatus) {
+            // If status is not changing, just return the full details.
+            // getRegistrationById returns Promise<RegistrationFullDetails>, which is compatible with Promise<DetailedRegistration>
+            // if RegistrationFullDetails is structurally identical or a superset of DetailedRegistration.
+            // The explicit cast `as unknown as DetailedRegistration` handles potential nominal type differences
+            // if `getRegistrationById`'s internal `RegistrationFullDetails` type isn't exported or directly used here.
+            // Given `registrationFullDetailsArgs` mirrors `getRegistrationById`'s includes, this should be safe.
+            return this.getRegistrationById(registrationId, requestingUser) as unknown as DetailedRegistration;
+        }
+
+        if (currentStatus === RegistrationStatus.CANCELLED) {
+            throw new ValidationError('Cannot change status of a cancelled registration.');
+        }
+        // Add any other specific disallowed transitions here if needed.
+        // E.g., if (currentStatus === RegistrationStatus.CONFIRMED && newStatus === RegistrationStatus.PENDING) {
+        //     throw new ValidationError('Cannot change a confirmed registration back to pending.');
+        // }
+
+        await prisma.$transaction(async (tx) => {
+            await tx.registration.update({
+                where: { id: registrationId },
+                data: { status: newStatus },
+            });
+
+            if (newStatus === RegistrationStatus.CANCELLED &&
+                (currentStatus === RegistrationStatus.CONFIRMED || currentStatus === RegistrationStatus.PENDING)) {
+                if (!registrationForAuth.event.isFree && registrationForAuth.purchase && registrationForAuth.purchase.items.length > 0) {
+                    const ticketUpdatePromises = registrationForAuth.purchase.items.map(item => {
+                        return tx.ticket.updateMany({
+                            where: { id: item.ticketId },
+                            data: {
+                                quantitySold: {
+                                    decrement: item.quantity
+                                }
+                            }
+                        }).catch(err => {
+                            console.warn(`Failed to decrement quantity for Ticket ID ${item.ticketId} during status update to CANCELLED for registration ${registrationId}:`, err);
+                        });
+                    });
+                    await Promise.all(ticketUpdatePromises);
+                    // TODO: Implement refund logic if transitioning from CONFIRMED to CANCELLED for paid events.
+                }
+            }
+        });
+
+        // After transaction, fetch and return the full, updated registration details.
+        return this.getRegistrationById(registrationId, requestingUser) as unknown as DetailedRegistration;
     }
 }
