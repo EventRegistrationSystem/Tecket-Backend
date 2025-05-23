@@ -1,158 +1,146 @@
 # Choice-Based Questions Feature: Detailed Implementation Plan
 
 **Date:** 2025-05-21
+**Last Updated:** 2025-05-23 (Backend for single-choice/DROPDOWN complete; Frontend for DROPDOWN complete)
 
 ## 1. Goal
 
 To extend the event registration system to support questions with pre-defined choices, such as multiple-choice (single answer) and multiple-choice (multiple answers), in addition to existing text-based questions.
+**Status:** Backend implementation for single-choice questions (using the `DROPDOWN` type) is complete. Frontend implementation for `DROPDOWN` type is complete.
 
 ## 2. Backend Implementation Steps
 
-### 2.1. Prisma Schema Modifications (`prisma/schema.prisma`)
+### 2.1. Prisma Schema Modifications (`prisma/schema.prisma`) [DONE for DROPDOWN support]
 
-1.  **Update `QuestionType` Enum:**
-    *   Add `MULTIPLE_CHOICE_SINGLE` (for radio buttons/dropdown).
-    *   Add `MULTIPLE_CHOICE_MULTIPLE` (for checkboxes).
-    *   Consider adding `TEXTAREA` for longer text inputs if not already present.
+1.  **Update `QuestionType` Enum:** [DONE (Decision: Use existing `DROPDOWN`)]
+    *   Decided to use the existing `DROPDOWN` type for single-choice questions.
+    *   The `QuestionType` enum is currently `TEXT, CHECKBOX, DROPDOWN`.
+    *   Support for `CHECKBOX` (multiple-choice multiple answers) options is pending.
     *   *File:* `prisma/schema.prisma`
-    *   *Action:* Modify the enum definition.
+    *   *Action:* Reviewed and kept simplified enum.
 
-2.  **Create `QuestionOption` Model:**
-    *   Define fields: `id` (Int, PK), `questionId` (Int, FK to `Question`), `optionText` (String), `displayOrder` (Int, optional).
-    *   Establish a relation to the `Question` model (`question Question @relation(...)`).
-    *   Add a unique constraint: `@@unique([questionId, optionText])`.
+2.  **Create `QuestionOption` Model:** [DONE]
+    *   Defined fields: `id` (Int, PK), `questionId` (Int, FK to `Question`), `optionText` (String), `displayOrder` (Int, optional).
+    *   Established relation to `Question` model. Added `onDelete: Cascade`.
+    *   Added unique constraint: `@@unique([questionId, optionText])`.
     *   *File:* `prisma/schema.prisma`
-    *   *Action:* Add new model definition.
+    *   *Action:* Added new model definition.
 
-3.  **Update `Question` Model:**
-    *   Add a one-to-many relation to `QuestionOption` (`options QuestionOption[]`).
+3.  **Update `Question` Model:** [DONE]
+    *   Added a one-to-many relation to `QuestionOption` (`options QuestionOption[]`).
     *   *File:* `prisma/schema.prisma`
-    *   *Action:* Add new field to the model.
+    *   *Action:* Added new field to the model.
 
-4.  **Review `Response` Model:**
-    *   Confirm `responseText` (String) will store the selected option text for `MULTIPLE_CHOICE_SINGLE`.
-    *   Confirm `responseText` (String) will store a JSON string array of selected option texts for `MULTIPLE_CHOICE_MULTIPLE`.
-    *   No schema changes strictly needed here if `responseText` is used, but ensure services handle the (de)serialization.
+4.  **Review `Response` Model:** [REVIEWED/CONFIRMED for DROPDOWN]
+    *   Confirmed `responseText` (String) will store the selected option text for `DROPDOWN` questions.
+    *   Handling for `CHECKBOX` (multiple answers) is pending.
     *   *File:* `prisma/schema.prisma`
-    *   *Action:* Review and confirm usage.
+    *   *Action:* Reviewed and confirmed usage for `DROPDOWN`.
 
-5.  **Run Prisma Migration:**
-    *   Execute `npx prisma migrate dev --name add_choice_question_support`.
-    *   Verify migration file is generated correctly.
-    *   *Action:* CLI command.
+5.  **Run Prisma Migration:** [DONE]
+    *   Executed `npx prisma migrate dev --name add_question_options` (after seed script fixes and db reset).
+    *   Migration applied successfully.
+    *   *Action:* CLI command executed.
 
-### 2.2. DTO Updates (`src/types/`)
+### 2.2. DTO Updates (`src/types/`) [DONE for DROPDOWN support]
 
-1.  **Update `QuestionInputDto` (`src/types/questionTypes.ts` or `eventTypes.ts`):**
-    *   Add `options?: Array<{ optionText: string; displayOrder?: number; id?: number }>`. `id` is for updating existing options.
-    *   *File:* Relevant type definition file.
-    *   *Action:* Modify interface.
+1.  **Update `QuestionInputDto` (`AddEventQuestionLinkDTO` in `src/types/questionTypes.ts` and used in `CreateEventDTO` in `src/types/eventTypes.ts`):** [DONE]
+    *   Added `options?: Array<{ id?: number; optionText: string; displayOrder?: number }>` to `AddEventQuestionLinkDTO`.
+    *   Updated `CreateEventDTO` to use `AddEventQuestionLinkDTO[]` for its `questions` field.
+    *   *Files:* `src/types/questionTypes.ts`, `src/types/eventTypes.ts`.
+    *   *Action:* Modified interfaces.
 
-2.  **Update `QuestionResponseDto` (or equivalent, e.g., in `EventQuestionResponseDto`):**
-    *   Ensure it includes `options: Array<{ id: number; optionText: string; displayOrder?: number }>` when returning question details.
-    *   *File:* Relevant type definition file.
-    *   *Action:* Modify interface.
+2.  **Update `QuestionResponseDto` (`EventQuestionWithQuestionDetails` in `src/types/questionTypes.ts`):** [DONE]
+    *   Ensured `question.options: Array<{ id: number; optionText: string; displayOrder?: number | null }>` is included when returning question details.
+    *   *File:* `src/types/questionTypes.ts`.
+    *   *Action:* Modified interface.
 
-3.  **Review `ParticipantInput.responses.responseText` (`src/types/registrationTypes.ts`):**
-    *   No DTO change, but document that `responseText` will now handle single strings or JSON string arrays based on `questionType`.
-    *   *Action:* Add comment/documentation if needed.
+3.  **Review `ParticipantInput.responses.responseText` (`src/types/registrationTypes.ts`):** [REVIEWED/CONFIRMED for DROPDOWN]
+    *   `responseText` will store the selected option string for `DROPDOWN`.
+    *   Handling for `CHECKBOX` (multiple answers) is pending.
+    *   *Action:* Confirmed.
 
-### 2.3. Service Layer Implementation (`src/services/`)
+### 2.3. Service Layer Implementation (`src/services/`) [DONE for DROPDOWN support]
 
-1.  **`EventQuestionService` (or `QuestionService` if global questions are managed separately):**
-    *   **Modify `createOrUpdateQuestion` (or similar method):**
-        *   Accept `options` array in the input DTO.
-        *   If `questionType` is choice-based:
-            *   Within a Prisma transaction (`tx`):
-                *   Create/update the `Question` record.
-                *   Manage `QuestionOption` records:
-                    *   **Identify options to delete:** Compare incoming options with existing options for the question. Delete any existing options not present in the incoming `options` array (by `id` if provided, or by `optionText` if managing by text).
-                    *   **Identify options to update:** If incoming options have `id`s, update their `optionText` or `displayOrder`.
-                    *   **Identify options to add:** For incoming options without an `id` (or if `id` doesn't match an existing one), create new `QuestionOption` records linked to the question.
-        *   If `questionType` is not choice-based, ensure any existing options for that question are deleted (in case type changed from choice to non-choice).
-    *   *File:* `src/services/eventQuestionService.ts` (or equivalent).
-    *   *Action:* Implement/modify method logic.
+1.  **`EventQuestionService` (`addQuestionToEvent` method):** [DONE for new DROPDOWN questions]
+    *   Modified `addQuestionToEvent` to accept `options` array from `AddEventQuestionLinkDTO`.
+    *   If `questionType` is `DROPDOWN`, it creates `QuestionOption` records using a nested write when a new global `Question` is created.
+    *   Full update/delete logic for options of *existing* global questions, or cleaning options if type changes, is not yet part of `addQuestionToEvent`.
+    *   *File:* `src/services/eventQuestionService.ts`.
+    *   *Action:* Modified method logic.
+    *   Modified `getEventQuestions` to include `question.options` in the response.
 
-2.  **`EventService.createEvent` and `EventService.updateEvent`:**
-    *   Ensure these methods correctly pass the `options` data from the event DTO to the `EventQuestionService` when creating/linking questions.
+2.  **`EventService.createEvent` and `EventService.updateEvent`:** [DONE]
+    *   `createEvent` refactored to use `EventQuestionService.addQuestionToEvent`, passing `actorUserId`, `actorUserRole`, and full question DTO (including `questionType`, `options`).
+    *   `updateEvent` updated to pass the full question DTO to `EventQuestionService.addQuestionToEvent`.
+    *   `getEventWithDetails` updated to include `question.options`.
     *   *File:* `src/services/eventServices.ts`.
-    *   *Action:* Modify method logic if questions are created/managed through `EventService`.
+    *   *Action:* Modified method logic.
 
-3.  **`RegistrationService.createRegistration`:**
+3.  **`RegistrationService.createRegistration`:** [DONE for DROPDOWN validation]
     *   **Enhance Response Validation Logic:**
-        *   After fetching `eventData` (which includes `eventQuestions` with their `questionType` and `options`):
-        *   For each response in `participant.responses`:
-            *   Retrieve the corresponding `EventQuestion` and its `Question` details (including `questionType` and `options`).
-            *   If `questionType` is `MULTIPLE_CHOICE_SINGLE`:
-                *   If question is required, ensure `responseText` is not empty.
-                *   Ensure `responseText` matches one of the `optionText` values from the question's `options`.
-            *   If `questionType` is `MULTIPLE_CHOICE_MULTIPLE`:
-                *   Attempt to parse `responseText` as a JSON array of strings.
-                *   If question is required and array is empty, throw validation error.
-                *   For each string in the parsed array, ensure it matches one of the `optionText` values from the question's `options`. If any don't match, throw validation error.
+        *   Updated to fetch `eventData` including `eventQuestions.question.options`.
+        *   For each response to a `DROPDOWN` question, it now validates that `responseText` matches one of the `optionText` values from the question's `options`.
     *   *File:* `src/services/registrationServices.ts`.
-    *   *Action:* Modify response validation logic.
+    *   *Action:* Modified response validation logic.
 
-### 2.4. Validation Schema Updates (`src/validation/`)
+### 2.4. Validation Schema Updates (`src/validation/`) [DONE for DROPDOWN support]
 
-1.  **`eventQuestionValidationSchema` (or equivalent for question input):**
-    *   Add validation for `options` array:
-        *   `Joi.array().items(Joi.object({ id: Joi.number().integer().positive().optional(), optionText: Joi.string().required(), displayOrder: Joi.number().integer().optional() })).optional()`.
-    *   Use `Joi.when('questionType', { is: Joi.string().valid('MULTIPLE_CHOICE_SINGLE', 'MULTIPLE_CHOICE_MULTIPLE'), then: Joi.array().min(1).required(), otherwise: Joi.array().optional() })` to make `options` required and non-empty for choice types.
-    *   *File:* `src/validation/eventQuestionValidation.ts` (or equivalent).
-    *   *Action:* Modify Joi schema.
+1.  **`eventQuestionValidationSchema` (`addEventQuestionLinkSchema` in `src/validation/eventQuestionValidation.ts`):** [DONE]
+    *   Added validation for `options` array:
+        *   `Joi.array().items(Joi.object({ id: Joi.number().integer().positive().optional(), optionText: Joi.string().min(1).max(255).required(), displayOrder: Joi.number().integer().positive().optional() })).optional()`.
+    *   Used `Joi.when('questionType', { is: QuestionType.DROPDOWN, then: Joi.array().min(1).required(), otherwise: Joi.array().optional() })` to make `options` required for `DROPDOWN` type.
+    *   *File:* `src/validation/eventQuestionValidation.ts`.
+    *   *Action:* Modified Joi schema.
 
-2.  **`registrationValidationSchema` (`src/validation/registrationValidation.ts`):**
+2.  **`registrationValidationSchema` (`src/validation/registrationValidation.ts`):** [REVIEWED/NO CHANGE NEEDED]
     *   For `responseText` within `participantInputSchema.responses`:
-        *   Keep basic validation (e.g., `Joi.string().required().allow('')`).
-        *   Detailed choice validation will occur in the service layer as it requires fetched question data.
-    *   *Action:* Review, likely no major changes here if service-layer validation is preferred for choice specifics.
+        *   Basic validation remains. Detailed choice validation occurs in `RegistrationService`.
+    *   *Action:* Reviewed, no changes needed here.
 
-### 2.5. Controller & Route Updates (`src/controllers/`, `src/routes/`)
+### 2.5. Controller & Route Updates (`src/controllers/`, `src/routes/`) [PARTIALLY DONE]
 
-1.  **`EventController` / `EventQuestionController`:**
-    *   Ensure controllers pass the new DTO fields (including `options` for questions) to the respective services.
-    *   No new routes are strictly needed for this if existing event/question CRUD endpoints are modified.
-    *   *File:* `src/controllers/eventController.ts`, `src/controllers/eventQuestionController.ts`.
-    *   *Action:* Update controller methods if necessary.
+1.  **`EventController` / `EventQuestionController`:** [DONE for `EventController.createEvent`]
+    *   `EventController.createEvent` updated to pass new arguments (`actorUserId`, `actorUserRole`) to `EventService.createEvent` due to signature change.
+    *   Other controller methods using DTOs that now include `options` (e.g., for updating events with questions) will implicitly handle them if they pass the DTOs through. Explicit checks/tests for these flows are pending.
+    *   No new routes created.
+    *   *File:* `src/controllers/eventController.ts`.
+    *   *Action:* Updated `createEvent` method.
 
-2.  **API Response for `GET /api/events/:id`:**
-    *   Ensure the `EventQuestionService` (or `EventService`) populates `eventQuestions.question.options` in the response.
-    *   *Action:* Verify service logic populates this for the controller.
+2.  **API Response for `GET /api/events/:id`:** [DONE]
+    *   `EventService.getEventWithDetails` (which likely powers this route) now populates `eventQuestions.question.options`.
+    *   *Action:* Verified service logic.
 
 ## 3. Frontend Implementation Steps
 
-*(Assumes Vue.js with Pinia, adjust as per actual frontend stack)*
+*(Assumes Vue.js with Pinia, adjust as per actual frontend stack)* [DONE for DROPDOWN type]
 
-### 3.1. Event Creation/Management UI (Admin/Organizer)
+### 3.1. Event Creation/Management UI (Admin/Organizer) [DONE for DROPDOWN type]
 
-1.  **Question Form Component:**
-    *   **Question Type Selector:** Update dropdown to include "Multiple Choice - Single Answer", "Multiple Choice - Multiple Answers".
+1.  **Question Form Component (`src/views/admin/Event/EventFormView.vue`):** [DONE for DROPDOWN type]
+    *   **Question Type Selector:** "Dropdown" (maps to frontend `select` type) is available.
     *   **Options Management UI:**
-        *   Conditionally display an "Options" section when a choice-based `questionType` is selected.
-        *   Allow dynamic adding/removing of option text fields.
-        *   Allow setting `displayOrder` for options (e.g., drag-and-drop or input fields).
-        *   Store options in local component state (e.g., an array of objects: `{ optionText: '...', displayOrder: 1 }`).
-    *   **API Call:** When saving the question (as part of event creation/update or standalone question management), include the `questionType` and the `options` array in the payload to the backend.
+        *   Conditionally displays an "Options" section for `select` type.
+        *   Allows dynamic adding/removing of option text fields (stored as an array of strings locally).
+        *   `displayOrder` is implicitly handled by array order during submission.
+    *   **API Call:** When saving, `select` type is mapped to `DROPDOWN`. The local array of option strings is transformed into an array of `{optionText: string, displayOrder: number}` objects for the backend payload. Backend `DROPDOWN` options (array of objects) are mapped to an array of strings for UI display.
 
-### 3.2. Registration Form UI (Participant)
+### 3.2. Registration Form UI (Participant) [DONE for DROPDOWN type]
 
-1.  **Fetch Event Details:**
-    *   When `EventDetailsView.vue` (or similar) fetches event data, ensure the API response includes `eventQuestions` with their `question.questionType` and `question.options`.
-    *   Store this data in Pinia store (`registrationStore.js` or `eventStore.js`).
+1.  **Fetch Event Details:** [CONFIRMED, relies on `eventServices.fetchEventDetails` and `registrationStore.setEvent`]
+    *   `EventDetailsView.vue` fetches event data, which includes `eventQuestions`. The `registrationStore` stores this.
+    *   Backend `DROPDOWN` questions should include `question.question.options` as an array of objects.
 
-2.  **Dynamic Question Rendering Component (`QuestionnaireFormView.vue` or similar):**
-    *   Iterate through questions from the store.
-    *   Use a `v-if`/`v-else-if` or a dynamic component (`<component :is="...">`) to render the appropriate input based on `question.questionType`:
-        *   `TEXT`: `<input type="text">`
-        *   `MULTIPLE_CHOICE_SINGLE`: Render as a group of `<input type="radio">` or a `<select>` element. Bind to a model that stores the selected `optionText`.
-        *   `MULTIPLE_CHOICE_MULTIPLE`: Render as a group of `<input type="checkbox">`. Bind to a model that stores an array of selected `optionText`s.
-    *   Populate radio buttons, select options, or checkboxes from `question.options`.
+2.  **Dynamic Question Rendering Component (`src/views/registration/QuestionnaireFormView.vue`):** [DONE for DROPDOWN type]
+    *   Iterates through questions from the store.
+    *   Renders an HTML `<select>` element for `question.question.questionType === 'DROPDOWN'`.
+    *   Populates `<option>` elements from `question.question.options`, using `optionObj.optionText` for value and display.
+    *   (Placeholder for `CHECKBOX` type rendering added but non-functional pending backend and full response logic).
 
-3.  **Data Submission (`ReviewFormView.vue` or submission logic):**
+3.  **Data Submission (`ReviewFormView.vue` or submission logic via `registrationStore.getRegistrationPayload`):** [CONFIRMED for DROPDOWN type]
     *   When constructing the `participants[n].responses` array for `POST /api/registrations`:
-        *   For `MULTIPLE_CHOICE_SINGLE`: `responseText` should be the string value of the selected option.
-        *   For `MULTIPLE_CHOICE_MULTIPLE`: `responseText` should be `JSON.stringify(arrayOfSelectedOptionTexts)`.
+        *   For `DROPDOWN` (single-choice): `responseText` is the string value of the selected `optionText`.
+        *   For `CHECKBOX` (multiple-choice multiple answers): `responseText` handling is pending (e.g., `JSON.stringify(arrayOfSelectedOptionTexts)`).
         *   For `TEXT` and other types: `responseText` remains a simple string.
 
 ### 3.3. Displaying Responses (Admin/Organizer Views & Participant Profile)
@@ -182,21 +170,21 @@ To extend the event registration system to support questions with pre-defined ch
 
 ## 5. Timeline & Phases (High-Level)
 
-*   **Phase 1: Backend Core Logic**
-    *   Prisma schema changes & migration.
-    *   DTO updates.
-    *   Service layer updates for question & option management (CRUD).
-    *   Basic validation schema updates.
-*   **Phase 2: Backend Registration Logic & API Polish**
-    *   `RegistrationService` updates for response validation.
-    *   Ensure `GET /api/events/:id` returns options correctly.
-    *   Controller and route checks.
-*   **Phase 3: Frontend - Organizer UI**
-    *   Implement question type selector and options management in event creation/editing forms.
-*   **Phase 4: Frontend - Participant Registration UI**
-    *   Implement dynamic rendering of choice-based questions.
-    *   Implement correct data submission format for responses.
-*   **Phase 5: Frontend - Displaying Responses & Testing**
+*   **Phase 1: Backend Core Logic** [DONE for DROPDOWN]
+    *   Prisma schema changes & migration. [DONE]
+    *   DTO updates. [DONE]
+    *   Service layer updates for question & option management (CRUD for new DROPDOWN questions). [DONE]
+    *   Basic validation schema updates. [DONE]
+*   **Phase 2: Backend Registration Logic & API Polish** [DONE for DROPDOWN]
+    *   `RegistrationService` updates for response validation (for DROPDOWN). [DONE]
+    *   Ensure `GET /api/events/:id` returns options correctly. [DONE]
+    *   Controller and route checks (initial updates for `EventController.createEvent` done). [PARTIALLY DONE]
+*   **Phase 3: Frontend - Organizer UI** [COMPLETED for DROPDOWN type]
+    *   Implemented question type selector updates and options management for `DROPDOWN` type in `EventFormView.vue`.
+*   **Phase 4: Frontend - Participant Registration UI** [COMPLETED for DROPDOWN type]
+    *   Implemented dynamic rendering of `DROPDOWN` questions in `QuestionnaireFormView.vue`.
+    *   Confirmed correct data submission format for `DROPDOWN` responses via `registrationStore`.
+*   **Phase 5: Frontend - Displaying Responses & Testing** [PENDING for DROPDOWN display, PENDING for Frontend Testing, Backend Testing also pending]
     *   Update views that display registration responses.
     *   Comprehensive testing (unit, integration, manual).
 
