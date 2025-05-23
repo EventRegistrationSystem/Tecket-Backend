@@ -14,19 +14,26 @@ export class EventController {
         try {
 
 
-            // const organiserId = 2;
-            const organiserId = req.user?.userId;
+            const requestingUser = req.user;
 
-            if (!organiserId) {
+            if (!requestingUser || !requestingUser.userId || !requestingUser.role) {
+                // It's good practice to ensure role is also present if your types expect it
                 res.status(401).json({
                     success: false,
-                    message: 'Authentication required'
+                    message: 'Authentication required: User ID and role are missing.'
                 });
                 return;
             }
 
-            // Create event
-            const event = await EventService.createEvent(organiserId, req.body);
+            // The first argument to EventService.createEvent is the organiserId for the event.
+            // The third and fourth are the actor's ID and role.
+            // In this controller setup, the actor (requestingUser.userId) IS the organiser of the event.
+            const event = await EventService.createEvent(
+                requestingUser.userId, // organiserId for the Event record
+                req.body,              // eventData
+                requestingUser.userId, // actorUserId - the user performing the action
+                requestingUser.role    // actorUserRole - role of the user performing the action
+            );
 
             res.status(201).json({
                 success: true,
