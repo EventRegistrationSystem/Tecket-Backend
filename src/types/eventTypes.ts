@@ -1,4 +1,5 @@
 import { Decimal } from "@prisma/client/runtime/library";
+import { AddEventQuestionLinkDTO } from "./questionTypes"; // Import the DTO for question structure
 
 // DTO for creating new events
 export interface CreateEventDTO {
@@ -18,11 +19,7 @@ export interface CreateEventDTO {
         salesStart: Date;
         salesEnd: Date;
     }>,
-    questions: Array<{
-        questionText: string;
-        isRequired: boolean;
-        displayOrder: number;
-    }>
+    questions: Array<AddEventQuestionLinkDTO>; // Use AddEventQuestionLinkDTO for the question structure
 }
 
 // Response for event data

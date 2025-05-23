@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { RegistrationController } from '../controllers/registrationController';
 import { authenticate, optionalAuthenticate, validateRequest, authorize } from '../middlewares/authMiddlewares'; // Added authorize
-import { registrationValidationSchema } from '../validation/registrationValidation'; 
+import { registrationValidationSchema, getRegistrationParamsSchema, updateRegistrationStatusSchema } from '../validation/registrationValidation';
+import { UserRole } from '@prisma/client';
 
 const router = Router();
 
@@ -238,7 +239,7 @@ router.post(
  */
 router.get(
     '/',
-    authenticate, 
+    authenticate,
     RegistrationController.getRegistrations
 );
 
@@ -333,7 +334,7 @@ router.get(
  */
 router.get(
     '/:registrationId',
-    authenticate, 
+    authenticate,
     RegistrationController.getRegistrationById
 );
 
@@ -396,6 +397,60 @@ router.patch(
     '/:registrationId',
     authenticate, // Ensure user is logged in
     RegistrationController.cancelRegistration // Add the new controller method
+);
+
+/**
+ * @openapi
+ * /registrations/{registrationId}/status:
+ *   patch:
+ *     summary: Update Registration Status
+ *     description: Update the status of a specific registration. Requires ADMIN or ORGANIZER role (organizer must own the event).
+ *     tags: [Registrations]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: registrationId
+ *         required: true
+ *         schema: { type: integer }
+ *         description: ID of the registration to update.
+ *     requestBody:
+ *       required: true
+ *       description: New status for the registration.
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/UpdateRegistrationStatusDto'
+ *     responses:
+ *       '200':
+ *         description: Registration status updated successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Registration status updated successfully"
+ *                 data:
+ *                   $ref: '#/components/schemas/RegistrationDetailed' # Assuming a detailed Registration schema
+ *       '400':
+ *         description: Bad Request (Invalid ID, Invalid Status, Invalid Transition)
+ *       '401':
+ *         description: Unauthorized (Not logged in)
+ *       '403':
+ *         description: Forbidden (User not Admin or authorized Organizer)
+ *       '404':
+ *         description: Not Found (Registration not found)
+ *       '500':
+ *         description: Server Error
+ */
+router.patch(
+    '/:registrationId/status',
+    authenticate,
+    authorize("ADMIN", "ORGANIZER"), // Removed extra comma
+    validateRequest(updateRegistrationStatusSchema), // Validate only req.body
+    RegistrationController.updateRegistrationStatus
 );
 
 /**

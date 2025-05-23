@@ -1,6 +1,6 @@
 # Project Summary: Event Registration System Backend
 
-**Last Updated:** 21/05/2025
+**Last Updated:** 2025-05-23 (Frontend DROPDOWN support added)
 
 ## 1. Project Purpose and Core Functionalities
 
@@ -27,6 +27,7 @@ To provide a robust backend API for managing events, registrations, tickets, and
     *   `EventQuestionService` handles find-or-create logic for global `Question` entities and is transaction-aware.
     *   ADMIN privileges and ownership checks are enforced.
     *   Joi validation for question link DTOs implemented.
+    *   **Choice-Based Questions (Backend - `DROPDOWN` type):** Backend support for `DROPDOWN` (single-choice) questions implemented, allowing predefined options and validation of responses against these options.
 *   **Registration System:**
     *   Supports registered users and guests, linking participants to events.
     *   Handles conditional status (`PENDING` for paid, `CONFIRMED` for free).
@@ -67,7 +68,8 @@ Layered Architecture:
 *   `Participant`: Stores profile info for *all* participants (guests or registered users). Linked to `User` if applicable.
 *   `Event`: Event details, including `isFree` flag.
 *   `Ticket`: Ticket types for paid events (linked to `Event`).
-*   `Question`: Custom questions.
+*   `Question`: Custom questions. The `QuestionType` enum currently supports `TEXT`, `CHECKBOX`, `DROPDOWN`. Includes an `options` relation to `QuestionOption[]` for choice-based questions.
+*   `QuestionOption`: Stores predefined choices for questions (e.g., for `DROPDOWN` type), linked to `Question`.
 *   `EventQuestions`: Links `Event` and `Question`, stores `isRequired`, `displayOrder`.
 *   `Registration`: Links `Participant` to `Event`, stores `status`.
 *   `Attendee`: Links `Registration` and `Participant`, representing an individual attending under a registration. Has many `Response` records.
@@ -155,6 +157,12 @@ Provides the user interface for interacting with the Event Registration System b
     *   `EventDetailsView.vue` now fetches full event details (including tickets and questions) and initializes the registration store.
     *   Registration step views (`TicketSelectionFormView.vue`, `PersonalInfoFormView.vue`, `QuestionnaireFormView.vue`, `ReviewFormView.vue`) refactored to use `registrationStore` and handle dynamic data.
     *   New views created: `RegistrationSuccessView.vue` and `RegistrationPendingPaymentView.vue`.
+*   **Admin Registration Management Views (Implemented):**
+    *   Implemented frontend views for the completed backend read APIs:
+        *   Event-Specific Registration List (`src/views/admin/Registration/EventRegistrationListView.vue`)
+        *   System-Wide Registration List (`src/views/admin/Registration/SystemRegistrationListView.vue`)
+        *   Detailed Registration View (`src/views/admin/Registration/RegistrationDetailsView.vue`)
+    *   These views are integrated into the Admin Layout and routing.
 *   **User Experience Enhancements:**
     *   Added a "Cancel Registration" button to the `StepIndicator.vue` component, allowing users to exit the flow and reset registration state.
 *   **Router Refactoring:**
@@ -171,6 +179,9 @@ Provides the user interface for interacting with the Event Registration System b
     *   Addressed a "Maximum recursive updates" warning in `PersonalInfoFormView.vue`.
     *   Investigated and clarified that missing questionnaire questions for a test event were due to no questions being associated with that event in the backend data.
     *   Improved rendering of questionnaire questions with a fallback for unrecognized types.
+*   **Support for `DROPDOWN` Question Type (Frontend):**
+    *   Updated `src/views/admin/Event/EventFormView.vue` to allow organizers to define `DROPDOWN` questions (as "select" type) and manage their text-based options. The form now correctly maps these to the backend's expected `DROPDOWN` type and `options` (array of objects) structure upon saving.
+    *   Updated `src/views/registration/QuestionnaireFormView.vue` to render backend `DROPDOWN` questions as HTML `<select>` elements, populating choices from the provided `question.question.options`. Participant responses (selected option text) are captured correctly.
 
 ## 5. Implemented Features (as of Sprint 4, Week 1)
 
@@ -193,6 +204,12 @@ Provides the user interface for interacting with the Event Registration System b
     *   Handles find-or-create for global questions.
     *   Methods made transaction-aware.
     *   Joi validation for question link DTOs added.
+    *   **Choice-Based Questions (Backend - `DROPDOWN` type):**
+        *   Prisma schema updated with `QuestionOption` model and relation to `Question`. `QuestionType` enum settled as `TEXT, CHECKBOX, DROPDOWN`.
+        *   DTOs (`AddEventQuestionLinkDTO`, `CreateEventDTO`, `EventQuestionWithQuestionDetails`) updated to handle question options.
+        *   `EventQuestionService` and `EventService` enhanced to manage creation of `DROPDOWN` questions with options and to return options when fetching question details.
+        *   `RegistrationService` updated to validate participant responses for `DROPDOWN` questions against their predefined options.
+        *   Joi validation for question input (`AddEventQuestionLinkDTO`) updated to handle `options` field, making it conditionally required for `DROPDOWN` type.
 *   **Registration System:**
     *   Refactored for multiple participants (attendees) and multiple ticket types per registration.
     *   CRUD operations with ADMIN/ownership checks. Joi validation for payloads.
@@ -200,6 +217,8 @@ Provides the user interface for interacting with the Event Registration System b
         *   `GET /api/events/:eventId/registrations`: Implemented for admins/organizers to list registration summaries for a specific event with filtering and pagination.
         *   `GET /api/registrations/admin/all-system-summary`: Implemented for admins to list all registration summaries system-wide with comprehensive filtering and pagination (serves the purpose of planned `/api/admin/registrations`).
         *   `GET /api/registrations/:registrationId`: Enhanced to return full registration details, including all attendees, their questionnaire responses, and purchase/ticket information.
+    *   **Registration Management (Admin/Organizer Actions - Backend):**
+        *   `PATCH /api/registrations/:registrationId/status`: Implemented for admins/organizers to update the status of a registration (e.g., CONFIRMED, CANCELLED). Includes logic for adjusting ticket stock on cancellation.
 *   **Payment Processing (Stripe):** **(Core Backend Functionality Implemented & Manually Tested)**
     *   Added Stripe dependencies and configured environment variables.
     *   Updated `Payment` and `Purchase` models in Prisma schema and migrated database.
@@ -235,11 +254,17 @@ Provides the user interface for interacting with the Event Registration System b
 1.  **Registration Management (Admin/Organizer - Backend & Frontend):**
     *   **Backend:**
         *   **Read APIs (View/Search): COMPLETED.** Endpoints for admins/organizers to view and search registration details (list for event, list all for admin, get by ID) are implemented.
-        *   **Next Backend Steps:** Implement update/action APIs (e.g., update status, limited edits, export).
-    *   **Frontend:** Develop UI components for these registration management features, starting with integrating the completed read APIs.
+        *   **Update Status API: COMPLETED.** `PATCH /api/registrations/:registrationId/status` implemented.
+        *   **Next Backend Steps:** Implement other update/action APIs (e.g., limited edits, export).
+    *   **Frontend:** Develop UI components for these registration management features, starting with integrating the completed read APIs and the update status API.
 2.  **Support New Question Types (Backend & Frontend):**
-    *   **Backend:** Update Prisma schema (`QuestionType` enum, add `options` field to `Question` model for choices). Modify services and DTOs to handle at least one new type (e.g., multiple-choice/dropdown) including storage and retrieval of options.
-    *   **Frontend:** Update event creation/question management UI to allow organizers to define new question types and their options. Update registration questionnaire form to render these new types.
+    *   **Backend:**
+        *   Prisma schema updated: `QuestionOption` model created, `Question` model updated with `options` relation. `QuestionType` enum is `TEXT, CHECKBOX, DROPDOWN`. [DONE for DROPDOWN support]
+        *   Services and DTOs modified to handle `DROPDOWN` (single-choice) questions, including storage/retrieval of options and response validation. [DONE for DROPDOWN support]
+        *   Backend support for `CHECKBOX` (multiple-choice multiple answers) options and response validation is pending.
+    *   **Frontend:** Update event creation/question management UI to allow organizers to define new question types and their options. Update registration questionnaire form to render these new types. [COMPLETED for DROPDOWN type]
+        *   `EventFormView.vue` now supports creating and editing `DROPDOWN` questions (frontend type "select") with text options. It correctly maps data to/from the backend's `DROPDOWN` type and its `options` (array of objects) structure.
+        *   `QuestionnaireFormView.vue` now renders `DROPDOWN` type questions as HTML `<select>` elements, using the `optionText` from the backend's `options` objects.
 3.  **Frontend Static Data Cleanup:**
     *   **Frontend:** Systematically replace mock data in frontend components with live API calls to the backend.
 4.  **Backend Joi Validations:**

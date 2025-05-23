@@ -1,6 +1,6 @@
 # Backend API Integration Guide for Frontend Developers
 
-**Last Updated:** 21/05/2025
+**Last Updated:** 23/05/2025
 
 ## 1. Introduction & Overview
 
@@ -620,6 +620,32 @@ This section provides a summary of important Data Transfer Objects (DTOs) used i
 
 ---
 
+## 4.4. Admin Registration Management Views (Implemented)
+
+The following frontend views have been implemented to integrate with the completed backend read APIs for registration management:
+
+*   **Event-Specific Registration List View:**
+    *   **Component:** `src/views/admin/Registration/EventRegistrationListView.vue`
+    *   **Purpose:** Displays a paginated, filterable, and searchable list of registrations for a specific event.
+    *   **Backend API:** `GET /api/events/:eventId/registrations` (See section 3.6.1)
+    *   **Route:** `/admin/events/:eventId/registrations` (Name: `AdminEventRegistrationList`)
+
+*   **System-Wide Registration List View (Admin Only):**
+    *   **Component:** `src/views/admin/Registration/SystemRegistrationListView.vue`
+    *   **Purpose:** Displays a paginated, filterable, and searchable list of all registrations across the system.
+    *   **Backend API:** `GET /api/registrations/admin/all-system-summary` (See section 3.6.2)
+    *   **Route:** `/admin/registrations` (Name: `AdminSystemRegistrationList`)
+
+*   **Detailed Registration Information View:**
+    *   **Component:** `src/views/admin/Registration/RegistrationDetailsView.vue`
+    *   **Purpose:** Displays comprehensive details for a single registration, including attendees, responses, and purchase information.
+    *   **Backend API:** `GET /api/registrations/:registrationId` (See section 3.6.3)
+    *   **Route:** `/admin/registrations/:registrationId` (Name: `AdminRegistrationDetail`)
+
+These views are integrated into the Admin Layout and accessible via the defined routes and links from other admin pages (e.g., Event List, Admin Sidebar).
+
+---
+
 ### 3.6. Registration Management (Admin/Organizer Views - Read APIs)
 
 This section details the backend APIs implemented as part of Phase 1 for viewing and querying registration data, primarily for Administrator and Event Organizer roles.
@@ -763,4 +789,34 @@ This section details the backend APIs implemented as part of Phase 1 for viewing
         ```
     *   **Frontend Action:** Used to display a detailed view of a specific registration. This view would typically be accessed by clicking on an item from one of the list views (from API 1 or 2).
 
-*(Next sections could include: User Profile Management, Ticket Management (by Organizers), detailed Registration Management views for update/action APIs, Workflow Diagrams, etc.)*
+*   **4. Update Registration Status:** `PATCH /api/registrations/:registrationId/status`
+    *   **Purpose:** Allows an authenticated `ADMIN` or `ORGANIZER` (for events they own) to update the status of a specific registration.
+    *   **Authentication:** Required (`ADMIN` or `ORGANIZER` role).
+    *   **Path Parameter:**
+        *   `:registrationId` (number): The ID of the registration to update.
+    *   **Request Body (`UpdateRegistrationStatusDto`):**
+        ```json
+        {
+          "status": "CONFIRMED" // Or "CANCELLED", etc. Must be a valid RegistrationStatus enum value.
+        }
+        ```
+    *   **Success Response (200 OK):** The full updated registration details (similar to the response from `GET /api/registrations/:registrationId`).
+        ```json
+        {
+          "message": "Registration status updated successfully",
+          "data": {
+            // ... full registration details with the new status ...
+            "id": 123,
+            "status": "CONFIRMED", 
+            // ... other fields as in GET /api/registrations/:registrationId
+          }
+        }
+        ```
+    *   **Error Responses:**
+        *   `400 Bad Request`: If the `registrationId` is invalid, the `status` in the body is invalid, or the status transition is not allowed (e.g., trying to update a `CANCELLED` registration).
+        *   `401 Unauthorized`: If the user is not authenticated.
+        *   `403 Forbidden`: If the authenticated user is not an Admin and not the Organizer of the event associated with the registration.
+        *   `404 Not Found`: If the registration with the given `registrationId` does not exist.
+    *   **Frontend Action:** Typically triggered from an admin/organizer registration detail view. After a successful update, refresh the displayed registration details to reflect the new status.
+
+*(Next sections could include: User Profile Management, Ticket Management (by Organizers), other Registration Management update/action APIs, Workflow Diagrams, etc.)*

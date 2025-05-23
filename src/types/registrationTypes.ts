@@ -1,6 +1,5 @@
-// Participant data structure expected within the registration payload
 
-import { PaymentStatus, RegistrationStatus } from "@prisma/client"; // Added RegistrationStatus
+import { PaymentStatus, RegistrationStatus } from "@prisma/client";
 
 // Includes participant details and their specific answers
 export interface ParticipantInput {
@@ -14,7 +13,6 @@ export interface ParticipantInput {
     state?: string;
     zipCode?: string;
     country?: string;
-    // Responses specific to this participant
     responses: Array<{
         eventQuestionId: number; // ID linking to the EventQuestions table
         responseText: string;
@@ -109,18 +107,22 @@ export interface GetRegistrationsQuery {
 export interface GetRegistrationsForEventQuery {
     page?: number; // Default 1 in service/controller
     limit?: number; // Default 10 in service/controller
-    search?: string; 
-    status?: RegistrationStatus; 
-    ticketId?: number; 
+    search?: string;
+    status?: RegistrationStatus;
+    ticketId?: number;
 }
 
 export interface GetAdminAllRegistrationsQuery {
     page?: number; // Default 1
     limit?: number; // Default 10
-    search?: string; 
-    status?: RegistrationStatus; 
-    ticketId?: number; 
-    eventId?: number; 
-    userId?: number; 
+    search?: string;
+    status?: RegistrationStatus;
+    ticketId?: number;
+    eventId?: number;
+    userId?: number;
     participantId?: number;
+}
+
+export interface UpdateRegistrationStatusDto {
+    status: RegistrationStatus;
 }
