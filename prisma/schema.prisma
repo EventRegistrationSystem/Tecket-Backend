@@ -35,12 +35,8 @@ enum TicketStatus {
 
 enum QuestionType {
   TEXT
-  MULTIPLE_CHOICE
-  CHECKBOX
-  DROPDOWN
-  DATE
-  EMAIL
-  PHONE
+  CHECKBOX          // For multiple selections
+  DROPDOWN          // For single selection from a list
 }
 
 enum RegistrationStatus {
@@ -115,9 +111,23 @@ model Question {
   updatedAt       DateTime     @updatedAt @map("updated_at")
 
   // Relations
+  options        QuestionOption[] // Options for choice-based questions
   eventQuestions EventQuestions[]
 
   @@map("questions")
+}
+
+model QuestionOption {
+  id           Int    @id @default(autoincrement())
+  questionId   Int    @map("question_id")
+  optionText   String @map("option_text")
+  displayOrder Int?   @map("display_order") // Optional field for ordering
+
+  // Relations
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade) // Added onDelete for data integrity
+
+  @@unique([questionId, optionText])
+  @@map("question_options")
 }
 
 model EventQuestions {
