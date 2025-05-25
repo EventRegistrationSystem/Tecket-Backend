@@ -1,12 +1,12 @@
 # Choice-Based Questions Feature: Detailed Implementation Plan
 
 **Date:** 2025-05-21
-**Last Updated:** 2025-05-25 (Backend for DROPDOWN and CHECKBOX complete; Frontend for DROPDOWN complete)
+**Last Updated:** 2025-05-25 (Backend for DROPDOWN and CHECKBOX complete; Frontend for DROPDOWN and CHECKBOX complete)
 
 ## 1. Goal
 
 To extend the event registration system to support questions with pre-defined choices, such as multiple-choice (single answer) and multiple-choice (multiple answers), in addition to existing text-based questions.
-**Status:** Backend implementation for single-choice (`DROPDOWN`) and multiple-choice (`CHECKBOX`) questions is complete. Frontend implementation for `DROPDOWN` type is complete. Frontend for `CHECKBOX` is pending.
+**Status:** Backend implementation for single-choice (`DROPDOWN`) and multiple-choice (`CHECKBOX`) questions is complete. Frontend implementation for `DROPDOWN` and `CHECKBOX` types is complete.
 
 ## 2. Backend Implementation Steps
 
@@ -113,34 +113,35 @@ To extend the event registration system to support questions with pre-defined ch
 
 ## 3. Frontend Implementation Steps
 
-*(Assumes Vue.js with Pinia, adjust as per actual frontend stack)* [DONE for DROPDOWN type]
+*(Assumes Vue.js with Pinia, adjust as per actual frontend stack)* [DONE for DROPDOWN & CHECKBOX types]
 
-### 3.1. Event Creation/Management UI (Admin/Organizer) [DONE for DROPDOWN type]
+### 3.1. Event Creation/Management UI (Admin/Organizer) [DONE for DROPDOWN & CHECKBOX types]
 
-1.  **Question Form Component (`src/views/admin/Event/EventFormView.vue`):** [DONE for DROPDOWN type]
-    *   **Question Type Selector:** "Dropdown" (maps to frontend `select` type) is available.
+1.  **Question Form Component (`src/views/admin/Event/EventFormView.vue`):** [DONE for DROPDOWN & CHECKBOX types]
+    *   **Question Type Selector:** "Dropdown" (maps to frontend `select` type) and "Checkboxes" (maps to frontend `checkbox` type) are available.
     *   **Options Management UI:**
-        *   Conditionally displays an "Options" section for `select` type.
+        *   Conditionally displays an "Options" section for `select` and `checkbox` types.
         *   Allows dynamic adding/removing of option text fields (stored as an array of strings locally).
         *   `displayOrder` is implicitly handled by array order during submission.
-    *   **API Call:** When saving, `select` type is mapped to `DROPDOWN`. The local array of option strings is transformed into an array of `{optionText: string, displayOrder: number}` objects for the backend payload. Backend `DROPDOWN` options (array of objects) are mapped to an array of strings for UI display.
+    *   **API Call:** When saving, `select` type is mapped to `DROPDOWN` and `checkbox` type is mapped to `CHECKBOX`. The local array of option strings is transformed into an array of `{optionText: string, displayOrder: number}` objects for the backend payload. Backend `DROPDOWN` and `CHECKBOX` options (array of objects) are mapped to an array of strings for UI display.
 
-### 3.2. Registration Form UI (Participant) [DONE for DROPDOWN type]
+### 3.2. Registration Form UI (Participant) [DONE for DROPDOWN & CHECKBOX types]
 
 1.  **Fetch Event Details:** [CONFIRMED, relies on `eventServices.fetchEventDetails` and `registrationStore.setEvent`]
     *   `EventDetailsView.vue` fetches event data, which includes `eventQuestions`. The `registrationStore` stores this.
-    *   Backend `DROPDOWN` questions should include `question.question.options` as an array of objects.
+    *   Backend `DROPDOWN` and `CHECKBOX` questions should include `question.question.options` as an array of objects.
 
-2.  **Dynamic Question Rendering Component (`src/views/registration/QuestionnaireFormView.vue`):** [DONE for DROPDOWN type]
+2.  **Dynamic Question Rendering Component (`src/views/registration/QuestionnaireFormView.vue`):** [DONE for DROPDOWN & CHECKBOX types]
     *   Iterates through questions from the store.
     *   Renders an HTML `<select>` element for `question.question.questionType === 'DROPDOWN'`.
-    *   Populates `<option>` elements from `question.question.options`, using `optionObj.optionText` for value and display.
-    *   (Placeholder for `CHECKBOX` type rendering added but non-functional pending backend and full response logic).
+    *   Renders a group of HTML `<input type="checkbox">` elements for `question.question.questionType === 'CHECKBOX'`.
+    *   Populates `<option>` elements or checkboxes from `question.question.options`, using `optionObj.optionText` for value and display.
+    *   Includes `updateCheckboxResponse` function to manage multiple selections for `CHECKBOX` type.
 
-3.  **Data Submission (`ReviewFormView.vue` or submission logic via `registrationStore.getRegistrationPayload`):** [CONFIRMED for DROPDOWN type]
+3.  **Data Submission (`ReviewFormView.vue` or submission logic via `registrationStore.getRegistrationPayload`):** [CONFIRMED for DROPDOWN & CHECKBOX types]
     *   When constructing the `participants[n].responses` array for `POST /api/registrations`:
         *   For `DROPDOWN` (single-choice): `responseText` is the string value of the selected `optionText`.
-        *   For `CHECKBOX` (multiple-choice multiple answers): `responseText` handling is pending (e.g., `JSON.stringify(arrayOfSelectedOptionTexts)`).
+        *   For `CHECKBOX` (multiple-choice multiple answers): `responseText` is a JSON string array of selected `optionText`s.
         *   For `TEXT` and other types: `responseText` remains a simple string.
 
 ### 3.3. Displaying Responses (Admin/Organizer Views & Participant Profile)
@@ -179,14 +180,11 @@ To extend the event registration system to support questions with pre-defined ch
     *   `RegistrationService` updates for response validation (for DROPDOWN & CHECKBOX). [DONE]
     *   Ensure `GET /api/events/:id` returns options correctly. [DONE]
     *   Controller and route checks (initial updates for `EventController.createEvent` done). [PARTIALLY DONE]
-*   **Phase 3: Frontend - Organizer UI** [COMPLETED for DROPDOWN type, PENDING for CHECKBOX]
-    *   Implemented question type selector updates and options management for `DROPDOWN` type in `EventFormView.vue`.
-    *   Needs update for `CHECKBOX` type.
-*   **Phase 4: Frontend - Participant Registration UI** [COMPLETED for DROPDOWN type, PENDING for CHECKBOX]
-    *   Implemented dynamic rendering of `DROPDOWN` questions in `QuestionnaireFormView.vue`.
-    *   Needs update for `CHECKBOX` type.
-    *   Confirmed correct data submission format for `DROPDOWN` responses via `registrationStore`.
-    *   Needs update for `CHECKBOX` response submission (JSON string array).
+*   **Phase 3: Frontend - Organizer UI** [COMPLETED for DROPDOWN & CHECKBOX types]
+    *   Implemented question type selector updates and options management for `DROPDOWN` and `CHECKBOX` types in `EventFormView.vue`.
+*   **Phase 4: Frontend - Participant Registration UI** [COMPLETED for DROPDOWN & CHECKBOX types]
+    *   Implemented dynamic rendering of `DROPDOWN` and `CHECKBOX` questions in `QuestionnaireFormView.vue`.
+    *   Confirmed correct data submission format for `DROPDOWN` and `CHECKBOX` responses via `registrationStore`.
 *   **Phase 5: Frontend - Displaying Responses & Testing** [PENDING for DROPDOWN display, PENDING for CHECKBOX display, PENDING for Frontend Testing, Backend Testing also pending]
     *   Update views that display registration responses.
     *   Comprehensive testing (unit, integration, manual).
