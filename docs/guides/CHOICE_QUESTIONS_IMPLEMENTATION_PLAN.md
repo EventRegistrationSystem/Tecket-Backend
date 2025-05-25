@@ -1,23 +1,23 @@
 # Choice-Based Questions Feature: Detailed Implementation Plan
 
 **Date:** 2025-05-21
-**Last Updated:** 2025-05-23 (Backend for single-choice/DROPDOWN complete; Frontend for DROPDOWN complete)
+**Last Updated:** 2025-05-25 (Backend for DROPDOWN and CHECKBOX complete; Frontend for DROPDOWN complete)
 
 ## 1. Goal
 
 To extend the event registration system to support questions with pre-defined choices, such as multiple-choice (single answer) and multiple-choice (multiple answers), in addition to existing text-based questions.
-**Status:** Backend implementation for single-choice questions (using the `DROPDOWN` type) is complete. Frontend implementation for `DROPDOWN` type is complete.
+**Status:** Backend implementation for single-choice (`DROPDOWN`) and multiple-choice (`CHECKBOX`) questions is complete. Frontend implementation for `DROPDOWN` type is complete. Frontend for `CHECKBOX` is pending.
 
 ## 2. Backend Implementation Steps
 
-### 2.1. Prisma Schema Modifications (`prisma/schema.prisma`) [DONE for DROPDOWN support]
+### 2.1. Prisma Schema Modifications (`prisma/schema.prisma`) [DONE for DROPDOWN & CHECKBOX support]
 
-1.  **Update `QuestionType` Enum:** [DONE (Decision: Use existing `DROPDOWN`)]
-    *   Decided to use the existing `DROPDOWN` type for single-choice questions.
-    *   The `QuestionType` enum is currently `TEXT, CHECKBOX, DROPDOWN`.
-    *   Support for `CHECKBOX` (multiple-choice multiple answers) options is pending.
+1.  **Update `QuestionType` Enum:** [DONE (Used existing `DROPDOWN` and `CHECKBOX`)]
+    *   Used existing `DROPDOWN` type for single-choice questions and `CHECKBOX` for multiple-choice multiple answers.
+    *   The `QuestionType` enum is `TEXT, CHECKBOX, DROPDOWN`.
+    *   Backend support for `CHECKBOX` options and response validation is now implemented.
     *   *File:* `prisma/schema.prisma`
-    *   *Action:* Reviewed and kept simplified enum.
+    *   *Action:* No schema changes were needed for `CHECKBOX` type itself as it existed. `QuestionOption` model is used for its options.
 
 2.  **Create `QuestionOption` Model:** [DONE]
     *   Defined fields: `id` (Int, PK), `questionId` (Int, FK to `Question`), `optionText` (String), `displayOrder` (Int, optional).
@@ -31,18 +31,18 @@ To extend the event registration system to support questions with pre-defined ch
     *   *File:* `prisma/schema.prisma`
     *   *Action:* Added new field to the model.
 
-4.  **Review `Response` Model:** [REVIEWED/CONFIRMED for DROPDOWN]
+4.  **Review `Response` Model:** [REVIEWED/CONFIRMED for DROPDOWN & CHECKBOX]
     *   Confirmed `responseText` (String) will store the selected option text for `DROPDOWN` questions.
-    *   Handling for `CHECKBOX` (multiple answers) is pending.
+    *   Confirmed `responseText` (String) will store a JSON string array of selected option texts for `CHECKBOX` questions.
     *   *File:* `prisma/schema.prisma`
-    *   *Action:* Reviewed and confirmed usage for `DROPDOWN`.
+    *   *Action:* Reviewed and confirmed usage for both types.
 
 5.  **Run Prisma Migration:** [DONE]
     *   Executed `npx prisma migrate dev --name add_question_options` (after seed script fixes and db reset).
     *   Migration applied successfully.
     *   *Action:* CLI command executed.
 
-### 2.2. DTO Updates (`src/types/`) [DONE for DROPDOWN support]
+### 2.2. DTO Updates (`src/types/`) [DONE for DROPDOWN & CHECKBOX support]
 
 1.  **Update `QuestionInputDto` (`AddEventQuestionLinkDTO` in `src/types/questionTypes.ts` and used in `CreateEventDTO` in `src/types/eventTypes.ts`):** [DONE]
     *   Added `options?: Array<{ id?: number; optionText: string; displayOrder?: number }>` to `AddEventQuestionLinkDTO`.
@@ -55,16 +55,16 @@ To extend the event registration system to support questions with pre-defined ch
     *   *File:* `src/types/questionTypes.ts`.
     *   *Action:* Modified interface.
 
-3.  **Review `ParticipantInput.responses.responseText` (`src/types/registrationTypes.ts`):** [REVIEWED/CONFIRMED for DROPDOWN]
+3.  **Review `ParticipantInput.responses.responseText` (`src/types/registrationTypes.ts`):** [REVIEWED/CONFIRMED for DROPDOWN & CHECKBOX]
     *   `responseText` will store the selected option string for `DROPDOWN`.
-    *   Handling for `CHECKBOX` (multiple answers) is pending.
+    *   `responseText` will store a JSON string array of selected option texts for `CHECKBOX`.
     *   *Action:* Confirmed.
 
-### 2.3. Service Layer Implementation (`src/services/`) [DONE for DROPDOWN support]
+### 2.3. Service Layer Implementation (`src/services/`) [DONE for DROPDOWN & CHECKBOX support]
 
-1.  **`EventQuestionService` (`addQuestionToEvent` method):** [DONE for new DROPDOWN questions]
+1.  **`EventQuestionService` (`addQuestionToEvent` method):** [DONE for new DROPDOWN & CHECKBOX questions]
     *   Modified `addQuestionToEvent` to accept `options` array from `AddEventQuestionLinkDTO`.
-    *   If `questionType` is `DROPDOWN`, it creates `QuestionOption` records using a nested write when a new global `Question` is created.
+    *   If `questionType` is `DROPDOWN` or `CHECKBOX`, it creates `QuestionOption` records using a nested write when a new global `Question` is created.
     *   Full update/delete logic for options of *existing* global questions, or cleaning options if type changes, is not yet part of `addQuestionToEvent`.
     *   *File:* `src/services/eventQuestionService.ts`.
     *   *Action:* Modified method logic.
@@ -77,19 +77,19 @@ To extend the event registration system to support questions with pre-defined ch
     *   *File:* `src/services/eventServices.ts`.
     *   *Action:* Modified method logic.
 
-3.  **`RegistrationService.createRegistration`:** [DONE for DROPDOWN validation]
+3.  **`RegistrationService.createRegistration`:** [DONE for DROPDOWN & CHECKBOX validation]
     *   **Enhance Response Validation Logic:**
         *   Updated to fetch `eventData` including `eventQuestions.question.options`.
-        *   For each response to a `DROPDOWN` question, it now validates that `responseText` matches one of the `optionText` values from the question's `options`.
+        *   For `DROPDOWN` questions, validates `responseText` against `optionText` values.
+        *   For `CHECKBOX` questions, parses `responseText` (JSON string array) and validates each selected `optionText`.
     *   *File:* `src/services/registrationServices.ts`.
     *   *Action:* Modified response validation logic.
 
-### 2.4. Validation Schema Updates (`src/validation/`) [DONE for DROPDOWN support]
+### 2.4. Validation Schema Updates (`src/validation/`) [DONE for DROPDOWN & CHECKBOX support]
 
 1.  **`eventQuestionValidationSchema` (`addEventQuestionLinkSchema` in `src/validation/eventQuestionValidation.ts`):** [DONE]
-    *   Added validation for `options` array:
-        *   `Joi.array().items(Joi.object({ id: Joi.number().integer().positive().optional(), optionText: Joi.string().min(1).max(255).required(), displayOrder: Joi.number().integer().positive().optional() })).optional()`.
-    *   Used `Joi.when('questionType', { is: QuestionType.DROPDOWN, then: Joi.array().min(1).required(), otherwise: Joi.array().optional() })` to make `options` required for `DROPDOWN` type.
+    *   Added validation for `options` array.
+    *   Used `Joi.when('questionType', { is: Joi.string().valid(QuestionType.DROPDOWN, QuestionType.CHECKBOX), then: Joi.array().min(1).required(), otherwise: Joi.array().optional() })` to make `options` required for `DROPDOWN` or `CHECKBOX` type.
     *   *File:* `src/validation/eventQuestionValidation.ts`.
     *   *Action:* Modified Joi schema.
 
@@ -170,21 +170,24 @@ To extend the event registration system to support questions with pre-defined ch
 
 ## 5. Timeline & Phases (High-Level)
 
-*   **Phase 1: Backend Core Logic** [DONE for DROPDOWN]
+*   **Phase 1: Backend Core Logic** [DONE for DROPDOWN & CHECKBOX]
     *   Prisma schema changes & migration. [DONE]
     *   DTO updates. [DONE]
-    *   Service layer updates for question & option management (CRUD for new DROPDOWN questions). [DONE]
+    *   Service layer updates for question & option management (CRUD for new DROPDOWN & CHECKBOX questions). [DONE]
     *   Basic validation schema updates. [DONE]
-*   **Phase 2: Backend Registration Logic & API Polish** [DONE for DROPDOWN]
-    *   `RegistrationService` updates for response validation (for DROPDOWN). [DONE]
+*   **Phase 2: Backend Registration Logic & API Polish** [DONE for DROPDOWN & CHECKBOX]
+    *   `RegistrationService` updates for response validation (for DROPDOWN & CHECKBOX). [DONE]
     *   Ensure `GET /api/events/:id` returns options correctly. [DONE]
     *   Controller and route checks (initial updates for `EventController.createEvent` done). [PARTIALLY DONE]
-*   **Phase 3: Frontend - Organizer UI** [COMPLETED for DROPDOWN type]
+*   **Phase 3: Frontend - Organizer UI** [COMPLETED for DROPDOWN type, PENDING for CHECKBOX]
     *   Implemented question type selector updates and options management for `DROPDOWN` type in `EventFormView.vue`.
-*   **Phase 4: Frontend - Participant Registration UI** [COMPLETED for DROPDOWN type]
+    *   Needs update for `CHECKBOX` type.
+*   **Phase 4: Frontend - Participant Registration UI** [COMPLETED for DROPDOWN type, PENDING for CHECKBOX]
     *   Implemented dynamic rendering of `DROPDOWN` questions in `QuestionnaireFormView.vue`.
+    *   Needs update for `CHECKBOX` type.
     *   Confirmed correct data submission format for `DROPDOWN` responses via `registrationStore`.
-*   **Phase 5: Frontend - Displaying Responses & Testing** [PENDING for DROPDOWN display, PENDING for Frontend Testing, Backend Testing also pending]
+    *   Needs update for `CHECKBOX` response submission (JSON string array).
+*   **Phase 5: Frontend - Displaying Responses & Testing** [PENDING for DROPDOWN display, PENDING for CHECKBOX display, PENDING for Frontend Testing, Backend Testing also pending]
     *   Update views that display registration responses.
     *   Comprehensive testing (unit, integration, manual).
 
