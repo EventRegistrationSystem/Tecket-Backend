@@ -39,12 +39,12 @@ export class EventService {
      */
     static async createEvent(organiserId: number, eventData: CreateEventDTO, actorUserId: number, actorUserRole: UserRole) {
 
-        // Make sure the event end date is after the start date
+        // Event end date > Start date
         if (new Date(eventData.endDateTime) < new Date(eventData.startDateTime)) {
             throw new ValidationError('Event end date must be after the start date');
         }
 
-        // Make sure the event is not in the past
+        //  Event is not in the past
         if (new Date(eventData.startDateTime) < new Date()) {
             throw new ValidationError('Event start date must be in the future');
         }
@@ -148,15 +148,15 @@ export class EventService {
         }
         else {
             // Default to only showing PUBLISHED events for non-admins/non-owners
-            // If user is admin or checking their own events, this will be overridden
             where.status = "PUBLISHED";
         }
 
         // Handle admin view - admins can see all events in all statuses
-        if (filters.isAdmin) { // adminView flag is removed, isAdmin is sufficient
+        if (filters.isAdmin) {
             console.log('Admin view: removing status filter to show all statuses');
             delete where.status; // Remove the status filter for admin view
         }
+
         // Handle organizer view - organizers can see their own events in all statuses
         else if (filters.isOrganiser && filters.organiserId) {
             where.organiserId = filters.organiserId;
@@ -196,7 +196,6 @@ export class EventService {
         }
 
         //2.6 - Free event filter
-        // Check if the filter is explicitly provided (true or false), not just truthy
         if (filters.isFree !== undefined) {
             where.isFree = filters.isFree;
         }
@@ -448,7 +447,7 @@ export class EventService {
                 }
 
                 // Create new tickets from the payload
-                if (eventData.tickets && !updatedEvent.isFree) { // updatedEventData is from tx.event.update
+                if (eventData.tickets && !updatedEvent.isFree) {
                     for (const incomingTicket of eventData.tickets) {
 
                         // It also needs the event's endDateTime for validation, which updatedEventData would have.

@@ -1,7 +1,7 @@
 import { prisma } from '../config/prisma';
 import { AddEventQuestionLinkDTO, UpdateEventQuestionLinkDTO, EventQuestionWithQuestionDetails } from '../types/questionTypes';
 import { AuthorizationError, ValidationError, NotFoundError } from '../utils/errors';
-import { UserRole, Prisma } from '@prisma/client'; // Import UserRole and Prisma
+import { UserRole, Prisma, QuestionType } from '@prisma/client';
 
 // Define a type for the Prisma transaction client
 type PrismaTransactionClient = Omit<Prisma.TransactionClient, "$commit" | "$rollback">;
@@ -99,8 +99,8 @@ export class EventQuestionService {
                         questionType: data.questionType || 'TEXT',
                         category: data.category,
                         validationRules: data.validationRules || undefined,
-                        // Conditionally create options if the type is DROPDOWN and options are provided
-                        options: (data.questionType === 'DROPDOWN' && data.options && data.options.length > 0)
+                        // Conditionally create options if the type is DROPDOWN or CHECKBOX and options are provided
+                        options: ((data.questionType === QuestionType.DROPDOWN || data.questionType === QuestionType.CHECKBOX) && data.options && data.options.length > 0)
                             ? {
                                 create: data.options.map(opt => ({
                                     optionText: opt.optionText,
