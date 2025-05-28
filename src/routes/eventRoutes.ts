@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { EventController } from '../controllers/eventController';
 import { RegistrationController } from '../controllers/registrationController'; // Import RegistrationController
+import { ReportController } from '../controllers/reportController';
 import { authorize, authenticate, validateRequest, optionalAuthenticate } from '../middlewares/authMiddlewares';
 import { createEventSchema } from '../validation/eventValidation';
 import eventQuestionRoutes from './eventQuestionRoutes'; // Import the sub-router
@@ -430,5 +431,13 @@ router.get('/:eventId/registrations',
 
 // Mount event question routes nested under /events/:eventId/questions
 router.use('/:eventId/questions', eventQuestionRoutes);
+
+
+router.get(
+  '/:eventId/report',
+  authenticate,
+  authorize('ORGANIZER', 'ADMIN'),
+  ReportController.generateReport   
+);     
 
 export default router;
