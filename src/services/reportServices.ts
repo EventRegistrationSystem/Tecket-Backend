@@ -68,7 +68,7 @@ export class ReportService{
           email: att.participant.email,
           ticket:
             itemsPerAttendee[idx]?.ticket?.name ?? 'Unknown',
-          questionnaireResponses: att.responses.map(r => ({
+          questionnairreResponses: att.responses.map(r => ({
             question:  r.eventQuestion.question.questionText,
             response:  r.responseText
           }))
@@ -77,6 +77,10 @@ export class ReportService{
     }
 
     const report: Report = {
+      eventName: event.name,
+      eventDescription: event.description ?? '',
+      start: event.startDateTime,
+      end: event.endDateTime,
       sales: {
         totalTickets,
         revenue,

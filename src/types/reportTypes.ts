@@ -25,10 +25,14 @@ export interface ParticipantSection {
   name: string;
   email: string;
   ticket: string;                        // ticket name/id held
-  questionnaireResponses: QuestionnaireResponse[];
+  questionnairreResponses: QuestionnaireResponse[];
 }
 
 export interface Report {
+    eventName : string
+    eventDescription : string,
+    start : Date, 
+    end : Date,
     sales: SalesSection,
     remaining: RemainingSection,
     participants: ParticipantSection[]
