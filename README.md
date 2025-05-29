@@ -26,8 +26,8 @@ This method uses Docker to containerize both the backend application and the MyS
 #### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/your-username/Capstone-Backend.git
-cd Capstone-Backend
+git clone https://github.com/EventRegistrationSystem/Tecket-Backend.git
+cd Tecket-Backend
 ```
 
 #### 2. Configure Environment Variables
@@ -70,7 +70,7 @@ cd Capstone-Backend
 
 #### 3. Build and Run Containers
 
-Navigate to the `Capstone-Backend` directory and run Docker Compose. This will build your backend application image, pull the MySQL image, and start both services.
+Navigate to the `Tecket-Backend` directory and run Docker Compose. This will build your backend application image, pull the MySQL image, and start both services.
 
 ```bash
 sudo docker-compose up -d --build
@@ -114,8 +114,8 @@ This method runs the backend application directly on your host machine, requirin
 #### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/your-username/Capstone-Backend.git
-cd Capstone-Backend
+git clone https://github.com/your-username/Tecket-Backend.git
+cd Tecket-Backend
 ```
 
 #### 2. Install Dependencies
