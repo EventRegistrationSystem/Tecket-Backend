@@ -44,7 +44,7 @@ export class ReportService{
             responses: {
               include: {
                 eventQuestion: {
-                  include: { question: true }
+                  include: { question: { include: { options: true } } }
                 }
               }
             }
@@ -59,6 +59,7 @@ export class ReportService{
     });
 
     const participants: ParticipantSection[] = [];
+    const questionsAggregate: Record<string, Record<string, number>> = {};
 
     for (const reg of registrations) {
       const itemsPerAttendee = reg.purchase?.items ?? []; 
@@ -72,6 +73,35 @@ export class ReportService{
             question:  r.eventQuestion.question.questionText,
             response:  r.responseText
           }))
+        });
+
+        att.responses.forEach(r => {
+          const q = r.eventQuestion.question;
+          const questionText = q.questionText;
+          const options = q.options;
+          if (options && Array.isArray(options)) {
+            // Determine selected options for single/multiple choice
+            let selected: string[] = [];
+            if (q.questionType === 'CHECKBOX') {
+              try {
+                const arr = JSON.parse(r.responseText);
+                selected = Array.isArray(arr) ? arr : [r.responseText];
+              } catch {
+                selected = [r.responseText];
+              }
+            } else {
+              selected = [r.responseText];
+            }
+            selected.forEach(option => {
+              if (!questionsAggregate[questionText]) {
+                questionsAggregate[questionText] = {};
+              }
+              if (!questionsAggregate[questionText][option]) {
+                questionsAggregate[questionText][option] = 0;
+              }
+              questionsAggregate[questionText][option] += 1;
+            });
+          }
         });
       });
     }
@@ -91,7 +121,8 @@ export class ReportService{
         remainingTickets,
         remainingByTicket
       },
-      participants
+      participants,
+      questions: questionsAggregate
     };
 
     return report;

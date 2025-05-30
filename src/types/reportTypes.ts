@@ -1,4 +1,3 @@
-
 export interface TicketAggregate {
   name: string;   // ticket name (e.g. “VIP”, “General”)
   total: number;  // count or $, depending on context
@@ -28,6 +27,10 @@ export interface ParticipantSection {
   questionnairreResponses: QuestionnaireResponse[];
 }
 
+export interface QuestionAggregate {
+  [option: string]: number; // option text mapped to count
+}
+
 export interface Report {
     eventName : string
     eventDescription : string,
@@ -35,5 +38,6 @@ export interface Report {
     end : Date,
     sales: SalesSection,
     remaining: RemainingSection,
-    participants: ParticipantSection[]
+    participants: ParticipantSection[],
+    questions: Record<string, QuestionAggregate> // added aggregation for multiple-choice questions
 }
