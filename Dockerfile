@@ -1,5 +1,5 @@
 # Stage 1: Build the application
-FROM node:23-alpine AS builder
+FROM node:20-alpine AS builder
 
 WORKDIR /usr/src/app
 
@@ -26,7 +26,13 @@ RUN npm run build
 RUN npm prune --production
 
 # Stage 2: Production image
-FROM node:23-alpine
+FROM node:20-alpine
+
+# Set environment variable for production
+ENV NODE_ENV=production
+
+# Run as a non-root user for security
+USER node
 
 WORKDIR /usr/src/app
 
@@ -36,8 +42,7 @@ COPY --from=builder /usr/src/app/node_modules ./node_modules
 COPY --from=builder /usr/src/app/package*.json ./
 COPY --from=builder /usr/src/app/prisma ./prisma
 
-# Expose the port the app runs on
-# Ensure this matches the PORT environment variable your application uses (defaulting to 3000)
+# Expose the port the app runs on (Default to 3000)
 EXPOSE 3000
 
 # Command to run the application

@@ -25,10 +25,10 @@ export const addEventQuestionLinkSchema = Joi.object({
         displayOrder: Joi.number().integer().positive().optional()
       })
     ).when('questionType', {
-      is: QuestionType.DROPDOWN, // Use the enum member for clarity
+      is: Joi.string().valid(QuestionType.DROPDOWN, QuestionType.CHECKBOX), // Options required for DROPDOWN or CHECKBOX
       then: Joi.array().min(1).required().messages({
-        'array.min': 'At least one option is required for DROPDOWN questions.',
-        'any.required': 'Options are required for DROPDOWN questions.'
+        'array.min': 'At least one option is required for this question type.',
+        'any.required': 'Options are required for this question type.'
       }),
       otherwise: Joi.array().optional()
     }),

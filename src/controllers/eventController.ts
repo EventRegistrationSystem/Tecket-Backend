@@ -17,7 +17,7 @@ export class EventController {
             const requestingUser = req.user;
 
             if (!requestingUser || !requestingUser.userId || !requestingUser.role) {
-                // It's good practice to ensure role is also present if your types expect it
+                // If the user is not authenticated, return a 401 Unauthorized response
                 res.status(401).json({
                     success: false,
                     message: 'Authentication required: User ID and role are missing.'
@@ -25,9 +25,6 @@ export class EventController {
                 return;
             }
 
-            // The first argument to EventService.createEvent is the organiserId for the event.
-            // The third and fourth are the actor's ID and role.
-            // In this controller setup, the actor (requestingUser.userId) IS the organiser of the event.
             const event = await EventService.createEvent(
                 requestingUser.userId, // organiserId for the Event record
                 req.body,              // eventData
@@ -42,7 +39,7 @@ export class EventController {
             });
         }
         catch (error: any) {
-            console.error("Error creating event: ", error); // Changed to console.error
+            console.error("Error creating event: ", error);
             if (error instanceof AuthenticationError) {
                 res.status(error.statusCode || 401).json({ success: false, message: error.message });
             } else if (error instanceof AuthorizationError) {
@@ -54,7 +51,7 @@ export class EventController {
             } else {
                 res.status(500).json({
                     success: false,
-                    message: 'Internal server error creating event.', // Standardized message
+                    message: 'Internal server error creating event.',
                     error: process.env.NODE_ENV === 'development' ? error.message : undefined
                 });
             }
@@ -83,6 +80,11 @@ export class EventController {
                     req.query.isFree === 'false' ? false : undefined,
             };
 
+            // 2.1 Add status from query if present, before role-specific logic potentially overrides it
+            if (req.query.status) {
+                filters.status = req.query.status as string;
+            }
+
             //3. Handle date filters
             if (req.query.startDate) {
                 filters.startDate = new Date(req.query.startDate as string);
@@ -100,7 +102,7 @@ export class EventController {
                 if (req.user.role === 'ADMIN') {
                     console.log('User is an admin');
                     filters.isAdmin = true;
-                    // Admin view toggle removed - admin sees all by default if isAdmin is true
+                    // Admins can view all events, no additional filters needed
                 }
                 else if (req.user.role === 'ORGANIZER') {
                     console.log('User is an organizer');

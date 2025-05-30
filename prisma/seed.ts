@@ -273,6 +273,26 @@ async function createQuestionsForEvent(eventId: number, includeExtras = false) {
     data: { eventId, questionId: q_contactMethod.id, isRequired: true, displayOrder: 3 }
   });
 
+  const q_interests = await prisma.question.create({
+    data: {
+      questionText: 'Interests for future events? (Select all that apply)',
+      questionType: QuestionType.CHECKBOX,
+      options: {
+        create: [
+          { optionText: 'Tech Talks', displayOrder: 1 },
+          { optionText: 'Workshops', displayOrder: 2 },
+          { optionText: 'Networking', displayOrder: 3 },
+          { optionText: 'Hackathons', displayOrder: 4 },
+          { optionText: 'Career Fairs', displayOrder: 5 },
+        ],
+      },
+    }
+  });
+  await prisma.eventQuestions.create({
+    data: { eventId, questionId: q_interests.id, isRequired: false, displayOrder: 4 }
+  });
+
+
   // Add extra questions for some events
   if (includeExtras) { // e.g. for sportEvent
     const q3 = await prisma.question.create({
@@ -386,6 +406,22 @@ async function createRegistrationsAndResponses(participants: any[], eventId: num
             responseText = eq.question.options[Math.floor(Math.random() * eq.question.options.length)].optionText;
           } else if (eq.question.questionText.includes('contact method') && eq.question.options && eq.question.options.length > 0) {
             responseText = eq.question.options[Math.floor(Math.random() * eq.question.options.length)].optionText;
+          }
+        } else if (eq.question.questionType === QuestionType.CHECKBOX) {
+          if (eq.question.questionText.includes('Interests for future events') && eq.question.options && eq.question.options.length > 0) {
+            const availableOptions = eq.question.options.map(opt => opt.optionText);
+            // Select a random number of options (e.g., 1 to 3, or fewer if not enough options)
+            const numToSelect = Math.floor(Math.random() * Math.min(availableOptions.length, 3)) + 1;
+
+            const selectedOptionsSet = new Set<string>();
+            if (availableOptions.length > 0) {
+              while (selectedOptionsSet.size < numToSelect) {
+                selectedOptionsSet.add(availableOptions[Math.floor(Math.random() * availableOptions.length)]);
+              }
+            }
+            responseText = JSON.stringify(Array.from(selectedOptionsSet));
+          } else {
+            responseText = JSON.stringify([]); // Default to empty array for other checkboxes
           }
         } else if (eq.question.questionType === QuestionType.TEXT) {
           if (eq.question.questionText.includes('dietary')) {
