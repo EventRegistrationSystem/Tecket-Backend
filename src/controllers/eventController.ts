@@ -80,6 +80,11 @@ export class EventController {
                     req.query.isFree === 'false' ? false : undefined,
             };
 
+            // 2.1 Add status from query if present, before role-specific logic potentially overrides it
+            if (req.query.status) {
+                filters.status = req.query.status as string;
+            }
+
             //3. Handle date filters
             if (req.query.startDate) {
                 filters.startDate = new Date(req.query.startDate as string);
@@ -97,7 +102,7 @@ export class EventController {
                 if (req.user.role === 'ADMIN') {
                     console.log('User is an admin');
                     filters.isAdmin = true;
-                    // Admin view toggle removed - admin sees all by default if isAdmin is true
+                    // Admins can view all events, no additional filters needed
                 }
                 else if (req.user.role === 'ORGANIZER') {
                     console.log('User is an organizer');
