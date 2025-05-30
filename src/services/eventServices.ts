@@ -1,9 +1,7 @@
 import { prisma } from '../config/prisma';
 import { CreateEventDTO, EventFilters, EventResponse, TicketResponse } from '../types/eventTypes';
-// Assuming CreateTicketSubDTO and EventQuestionDefinitionDTO are part of eventTypes or need to be imported
-// For now, we'll assume they are compatible with what TicketService and EventQuestionService expect.
-import { TicketService } from './ticketServices'; // Import TicketService
-import { EventQuestionService } from './eventQuestionService'; // Import EventQuestionService
+import { TicketService } from './ticketServices';
+import { EventQuestionService } from './eventQuestionService';
 import { JwtPayload } from '../types/authTypes';
 import { NotFoundError, AuthorizationError, ValidationError, EventError } from '../utils/errors';
 import { UserRole } from '@prisma/client';

@@ -15,24 +15,23 @@ export class EventQuestionService {
      * @param eventId - The ID of the event.
      * @param tx Optional Prisma transaction client
      */
-    private static async verifyAdminOrEventOrganizer(userId: number, userRole: UserRole, eventId: number, tx?: PrismaTransactionClient): Promise<void> {
+    private static async verifyAdminOrEventOrganizer(
+        userId: number,
+        userRole: UserRole,
+        eventId: number,
+        tx?: PrismaTransactionClient
+    ): Promise<void> {
         const prismaClient = tx || prisma;
-        if (userRole === UserRole.ADMIN) {
-            const eventExists = await prismaClient.event.count({ where: { id: eventId } });
-            if (eventExists === 0) {
-                throw new NotFoundError('Event not found');
-            }
-            return;
-        }
 
         const event = await prismaClient.event.findUnique({
             where: { id: eventId },
             select: { organiserId: true }
         });
+
         if (!event) {
             throw new NotFoundError('Event not found');
         }
-        if (event.organiserId !== userId) {
+        if (userRole !== UserRole.ADMIN && event.organiserId !== userId) {
             throw new AuthorizationError('You are not authorized to manage questions for this event.');
         }
     }
@@ -51,9 +50,9 @@ export class EventQuestionService {
         return prismaClient.eventQuestions.findMany({
             where: { eventId },
             include: {
-                question: { // Include the details of the linked global Question
+                question: {
                     include: {
-                        options: true // Also include the options for that question
+                        options: true
                     }
                 },
                 _count: {
