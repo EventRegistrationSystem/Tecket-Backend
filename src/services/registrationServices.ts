@@ -213,6 +213,59 @@ export class RegistrationService {
                             }
                         }
                     }
+                } else if (eventQuestion.question.questionType === QuestionType.CHECKBOX) {
+                    const responseForQuestion = participant.responses.find(r => r.eventQuestionId === providedEqId);
+                    if (responseForQuestion) { // Only validate if a response is provided
+                        const responseText = responseForQuestion.responseText;
+                        const validOptions = eventQuestion.question.options;
+
+                        if (responseText.trim() !== '') { // Only validate non-empty responses
+                            let selectedOptions: string[] = [];
+                            try {
+                                selectedOptions = JSON.parse(responseText);
+                                if (!Array.isArray(selectedOptions) || !selectedOptions.every(item => typeof item === 'string')) {
+                                    throw new Error('Response for CHECKBOX must be a JSON array of strings.');
+                                }
+                            } catch (e) {
+                                throw new ValidationError(
+                                    `Invalid response format for question "${eventQuestion.question.questionText}" for participant ${participant.firstName} ${participant.lastName}. Expected a JSON array of strings.`
+                                );
+                            }
+
+                            if (eventQuestion.isRequired && selectedOptions.length === 0) {
+                                throw new ValidationError(
+                                    `At least one option must be selected for required question "${eventQuestion.question.questionText}" for participant ${participant.firstName} ${participant.lastName}.`
+                                );
+                            }
+
+                            if (!validOptions || validOptions.length === 0) {
+                                // This case implies a CHECKBOX question was defined without options, which is problematic if answered.
+                                if (selectedOptions.length > 0) {
+                                    throw new ValidationError(`Question "${eventQuestion.question.questionText}" is a CHECKBOX type but has no defined options. Cannot validate response.`);
+                                }
+                            } else {
+                                for (const selectedOpt of selectedOptions) {
+                                    const isValidOption = validOptions.some(opt => opt.optionText === selectedOpt);
+                                    if (!isValidOption) {
+                                        throw new ValidationError(
+                                            `Invalid option "${selectedOpt}" provided for question "${eventQuestion.question.questionText}" for participant ${participant.firstName} ${participant.lastName}. ` +
+                                            `Valid options are: ${validOptions.map(opt => opt.optionText).join(', ')}.`
+                                        );
+                                    }
+                                }
+                            }
+                        } else if (eventQuestion.isRequired) {
+                            // Empty responseText for a required CHECKBOX question
+                            throw new ValidationError(
+                                `At least one option must be selected for required question "${eventQuestion.question.questionText}" for participant ${participant.firstName} ${participant.lastName}.`
+                            );
+                        }
+                    } else if (eventQuestion.isRequired) {
+                        // No response object found for a required CHECKBOX question
+                        throw new ValidationError(
+                            `Response required for question "${eventQuestion.question.questionText}" for participant ${participant.firstName} ${participant.lastName}.`
+                        );
+                    }
                 }
             }
         }

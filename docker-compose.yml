@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000" # Maps port 3000 on the host to port 3000 in the container
+    env_file:
+      - .env # Loads environment variables from a .env file in the same directory
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    # Ensure the app runs as the 'node' user as defined in Dockerfile
+    user: "node"
+    command: sh -c "npx prisma migrate deploy && npm start"
+
+  db:
+    image: mysql:8.0 # Using MySQL 8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql # Persistent storage for database data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost", "-u${MYSQL_USER}", "-p${MYSQL_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Optional: Expose DB port for direct access (e.g., for local dev tools)
+    # ports:
+    #   - "3306:3306"
+
+volumes:
+  mysql_data: # Defines the named volume for data persistence

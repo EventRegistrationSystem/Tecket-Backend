@@ -10,7 +10,7 @@ dist
 
 # Prisma
 # Migrations are applied by Prisma CLI, not copied directly
-prisma/migrations/* 
+# prisma/migrations/* 
 prisma/dev.db # SQLite dev database
 prisma/dev.db-journal
 

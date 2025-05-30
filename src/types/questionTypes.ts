@@ -6,7 +6,7 @@ export interface AddEventQuestionLinkDTO {
   questionType?: QuestionType; // Type for a new global question, defaults to TEXT
   category?: string;          // Category for a new global question
   validationRules?: any;      // Validation rules for a new global question (JSON type in Prisma)
-  options?: Array<{ id?: number; optionText: string; displayOrder?: number }>; // Options for choice-based questions (e.g., DROPDOWN)
+  options?: Array<{ id?: number; optionText: string; displayOrder?: number }>; // Options for choice-based questions (e.g., DROPDOWN, CHECKBOX)
   isRequired: boolean;
   displayOrder: number;
 }
