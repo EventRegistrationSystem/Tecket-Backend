@@ -43,7 +43,7 @@ COPY --from=builder /usr/src/app/package*.json ./
 COPY --from=builder /usr/src/app/prisma ./prisma
 
 # Expose the port the app runs on (Default to 3000)
-EXPOSE 3000
+EXPOSE 5000
 
 # Command to run the application
 # The prisma migrate deploy command will be handled by docker-compose

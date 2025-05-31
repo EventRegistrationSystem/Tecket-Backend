@@ -1,7 +1,7 @@
 import { prisma } from '../config/prisma';
-import { PrismaClient, Ticket, QuestionType } from '@prisma/client'; // Added QuestionType
-import { Report, TicketAggregate, ParticipantSection, QuestionAggregate } from '../types/reportTypes'; // Added QuestionAggregate
-import { NotFoundError } from '../utils/errors'; // For throwing specific error
+import { PrismaClient, Ticket, QuestionType } from '@prisma/client'; 
+import { Report, TicketAggregate, ParticipantSection, QuestionAggregate } from '../types/reportTypes'; 
+import { NotFoundError } from '../utils/errors'; 
 
 /**
  * Service class for handling report generation logic.
@@ -16,7 +16,8 @@ export class ReportService {
    * @throws NotFoundError if the event with the specified ID is not found.
    */
   static async generateReport(eventId: number): Promise<Report> {
-    // Fetch event details and all associated tickets concurrently
+    
+    // Fetch event details and all associated tickets 
     const [event, tickets] = await Promise.all([
       prisma.event.findUnique({ where: { id: eventId } }),
       prisma.ticket.findMany({ where: { eventId } }),
