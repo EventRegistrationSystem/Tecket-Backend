@@ -89,29 +89,25 @@ export class EventQuestionService {
             const existingGlobalQuestion = await prismaClient.question.findFirst({
                 where: { questionText: data.questionText }
             });
-            if (existingGlobalQuestion) {
-                questionId = existingGlobalQuestion.id;
-            } else {
-                const newGlobalQuestion = await prismaClient.question.create({
-                    data: {
-                        questionText: data.questionText,
-                        questionType: data.questionType || 'TEXT',
-                        category: data.category,
-                        validationRules: data.validationRules || undefined,
-                        // Conditionally create options if the type is DROPDOWN or CHECKBOX and options are provided
-                        options: ((data.questionType === QuestionType.DROPDOWN || data.questionType === QuestionType.CHECKBOX) && data.options && data.options.length > 0)
-                            ? {
-                                create: data.options.map(opt => ({
-                                    optionText: opt.optionText,
-                                    displayOrder: opt.displayOrder
-                                    // id from opt is ignored here as these are new options for a new question
-                                }))
-                            }
-                            : undefined
-                    }
-                });
-                questionId = newGlobalQuestion.id;
-            }
+            const newGlobalQuestion = await prismaClient.question.create({
+                data: {
+                    questionText: data.questionText,
+                    questionType: data.questionType || 'TEXT',
+                    category: data.category,
+                    validationRules: data.validationRules || undefined,
+                    // Conditionally create options if the type is DROPDOWN or CHECKBOX and options are provided
+                    options: ((data.questionType === QuestionType.DROPDOWN || data.questionType === QuestionType.CHECKBOX) && data.options && data.options.length > 0)
+                        ? {
+                            create: data.options.map(opt => ({
+                                optionText: opt.optionText,
+                                displayOrder: opt.displayOrder
+                                // id from opt is ignored here as these are new options for a new question
+                            }))
+                        }
+                        : undefined
+                }
+            });
+            questionId = newGlobalQuestion.id;
         } else {
             throw new ValidationError('Either questionId or questionText must be provided.');
         }
