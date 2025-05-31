@@ -1,10 +1,8 @@
-version: '3.8'
-
 services:
   # Production backend service
   app: 
     build: .
-    container_name: tecket_prod_app 
+    container_name: tecket-prod-app 
     ports:
       - "3000:3000" # Port 3000
     env_file:
@@ -19,7 +17,7 @@ services:
   # Production database service
   db: 
     image: mysql:8.0
-    container_name: tecket_prod_db 
+    container_name: tecket-prod-db 
     environment:
       MYSQL_ROOT_PASSWORD: ${PROD_MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${PROD_MYSQL_DATABASE}

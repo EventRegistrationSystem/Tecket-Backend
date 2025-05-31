@@ -1,10 +1,8 @@
-version: '3.8'
-
 services:
   # Staging backend service
   app: 
     build: .
-    container_name: tecket_staging_app 
+    container_name: tecket-staging-app 
     ports:
       - "3001:3000" # Port 3001
     env_file:
@@ -20,7 +18,7 @@ services:
   # Staging database service
   db: 
     image: mysql:8.0
-    container_name: tecket_staging_db 
+    container_name: tecket-staging-db 
     environment:
       MYSQL_ROOT_PASSWORD: ${STAGING_MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${STAGING_MYSQL_DATABASE}

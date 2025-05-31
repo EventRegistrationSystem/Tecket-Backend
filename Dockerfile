@@ -15,6 +15,8 @@ RUN npm ci
 # Copy prisma schema and generate client
 COPY prisma ./prisma/
 RUN npx prisma generate
+# Compile the Prisma seed script to JavaScript
+RUN npx tsc prisma/seed.ts --outDir prisma/dist_seed --module commonjs --esModuleInterop --resolveJsonModule --target es2020 --sourceMap false
 
 # Copy the rest of the application source code
 COPY . .
@@ -43,7 +45,7 @@ COPY --from=builder /usr/src/app/package*.json ./
 COPY --from=builder /usr/src/app/prisma ./prisma
 
 # Expose the port the app runs on (Default to 3000)
-EXPOSE 5000
+EXPOSE 3000
 
 # Command to run the application
 # The prisma migrate deploy command will be handled by docker-compose
