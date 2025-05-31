@@ -432,12 +432,71 @@ router.get('/:eventId/registrations',
 // Mount event question routes nested under /events/:eventId/questions
 router.use('/:eventId/questions', eventQuestionRoutes);
 
-
+/**
+ * @openapi
+ * /events/{eventId}/report:
+ *   get:
+ *     summary: Generate a report for a specific event
+ *     description: Retrieve a comprehensive report for an event, including sales, attendance, and questionnaire responses. Requires Admin or Event Organizer role.
+ *     tags: [Events, Reports]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: eventId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: The ID of the event for which to generate the report
+ *     responses:
+ *       200:
+ *         description: Successfully generated event report
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   $ref: '#/components/schemas/Report' # Assuming Report schema is defined in swagger.ts
+ *       400:
+ *         description: Invalid event ID
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       401:
+ *         description: Unauthorized - Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       403:
+ *         description: Forbidden - User does not have permission to access this event's report
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       404:
+ *         description: Event not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
 router.get(
   '/:eventId/report',
   authenticate,
   authorize('ORGANIZER', 'ADMIN'),
-  ReportController.generateReport   
-);     
+  ReportController.generateReport
+);
 
 export default router;

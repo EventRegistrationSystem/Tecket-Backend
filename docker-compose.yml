@@ -1,10 +1,9 @@
-version: '3.8'
-
 services:
   app:
     build: .
+    container_name: tecket-app 
     ports:
-      - "3000:3000" # Maps port 3000 on the host to port 3000 in the container
+      - "3000:3000" 
     env_file:
       - .env # Loads environment variables from a .env file in the same directory
     depends_on:
@@ -16,7 +15,8 @@ services:
     command: sh -c "npx prisma migrate deploy && npm start"
 
   db:
-    image: mysql:8.0 # Using MySQL 8.0
+    image: mysql:8.0 
+    container_name: tecket-db 
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}

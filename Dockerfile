@@ -15,6 +15,8 @@ RUN npm ci
 # Copy prisma schema and generate client
 COPY prisma ./prisma/
 RUN npx prisma generate
+# Compile the Prisma seed script to JavaScript
+RUN npx tsc prisma/seed.ts --outDir prisma/dist_seed --module commonjs --esModuleInterop --resolveJsonModule --target es2020 --sourceMap false
 
 # Copy the rest of the application source code
 COPY . .

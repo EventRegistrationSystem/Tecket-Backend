@@ -35,8 +35,8 @@ enum TicketStatus {
 
 enum QuestionType {
   TEXT
-  CHECKBOX          // For multiple selections
-  DROPDOWN          // For single selection from a list
+  CHECKBOX         
+  DROPDOWN          
 }
 
 enum RegistrationStatus {
