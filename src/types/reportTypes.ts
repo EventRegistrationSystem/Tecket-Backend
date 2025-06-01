@@ -150,7 +150,7 @@ export interface ParticipantSection {
   name: string;                             // Full name of the participant.
   email: string;                            // Email address of the participant.
   ticket: string;                           // Name or type of the ticket held by the participant (e.g., "VIP", "Early Bird").
-  questionnairreResponses: QuestionnaireResponse[]; // Array of responses given by the participant to event questionnaires.
+  questionnaireResponses: QuestionnaireResponse[]; // Array of responses given by the participant to event questionnaires.
 }
 
 /**
