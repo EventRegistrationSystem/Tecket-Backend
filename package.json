@@ -12,7 +12,8 @@
     "dev": "nodemon src/server.ts",
     "build": "tsc",
     "watch": "tsc -w",
-    "db:seed": "node prisma/dist_seed/seed.js",
+    "db:seed": "ts-node prisma/seed.ts",
+    "db:seed:prod": "ts-node prisma/prod-seed.ts",
     "db:reset": "prisma migrate reset --force",
     "db:setup": "prisma generate && prisma migrate deploy && npm run db:seed",
     "setup:dev": "npm install && npm run db:setup"
