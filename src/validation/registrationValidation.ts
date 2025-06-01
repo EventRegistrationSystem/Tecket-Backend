@@ -1,6 +1,7 @@
 import Joi from 'joi';
+import { RegistrationStatus } from '@prisma/client';
 // Import the new DTO and the nested ParticipantInput type
-import { CreateRegistrationDto, ParticipantInput } from '../types/registrationTypes';
+import { CreateRegistrationDto, ParticipantInput, UpdateRegistrationStatusDto } from '../types/registrationTypes';
 // Keep participantValidationSchema if it defines the fields within ParticipantInput
 import { participantValidationSchema } from './participantValidation';
 
@@ -78,21 +79,21 @@ export const registrationValidationSchema = Joi.object<CreateRegistrationDto>({
         'array.min': 'At least one participant is required',
         'any.required': 'Participant details are required'
     })
-    // Making sure no. of participants matches total ticket quantity
-    .custom((participants, helpers) => {
-        const tickets = helpers.state.ancestors[0].tickets; // Access the tickets array from the parent object
-        if (!tickets) {
-            // This case should ideally not happen if 'tickets' is required, but as a safeguard
-            return helpers.error('any.custom', { message: 'Tickets data is missing for participant count validation.' });
-        }
-        const totalTicketQuantity = tickets.reduce((sum: number, ticket: any) => sum + ticket.quantity, 0);
-        if (participants.length !== totalTicketQuantity) {
-            return helpers.error('any.custom', { message: `Number of participants (${participants.length}) must match the total quantity of tickets (${totalTicketQuantity}).` });
-        }
-        return participants; // Return the value if validation passes
-    }).messages({
-        'any.custom': 'Participant count does not match the total ticket quantity.'
-    })
+        // Making sure no. of participants matches total ticket quantity
+        .custom((participants, helpers) => {
+            const tickets = helpers.state.ancestors[0].tickets; // Access the tickets array from the parent object
+            if (!tickets) {
+                // This case should ideally not happen if 'tickets' is required, but as a safeguard
+                return helpers.error('any.custom', { message: 'Tickets data is missing for participant count validation.' });
+            }
+            const totalTicketQuantity = tickets.reduce((sum: number, ticket: any) => sum + ticket.quantity, 0);
+            if (participants.length !== totalTicketQuantity) {
+                return helpers.error('any.custom', { message: `Number of participants (${participants.length}) must match the total quantity of tickets (${totalTicketQuantity}).` });
+            }
+            return participants; // Return the value if validation passes
+        }).messages({
+            'any.custom': 'Participant count does not match the total ticket quantity.'
+        })
 });
 
 // Validation for retrieving registrations (e.g., by event or user)
@@ -111,6 +112,13 @@ export const getRegistrationParamsSchema = Joi.object({
         'number.positive': 'Registration ID must be a positive number',
         'any.required': 'Registration ID is required in path'
     }),
+});
+
+export const updateRegistrationStatusSchema = Joi.object<UpdateRegistrationStatusDto>({
+    status: Joi.string().valid(...Object.values(RegistrationStatus)).required().messages({
+        'any.only': `Status must be one of ${Object.values(RegistrationStatus).join(', ')}`,
+        'any.required': 'Status is required'
+    })
 });
 
 // Validation for cancelling a registration

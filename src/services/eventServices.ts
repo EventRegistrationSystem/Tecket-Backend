@@ -1,12 +1,10 @@
 import { prisma } from '../config/prisma';
 import { CreateEventDTO, EventFilters, EventResponse, TicketResponse } from '../types/eventTypes';
-// Assuming CreateTicketSubDTO and EventQuestionDefinitionDTO are part of eventTypes or need to be imported
-// For now, we'll assume they are compatible with what TicketService and EventQuestionService expect.
-import { TicketService } from './ticketServices'; // Import TicketService
-import { EventQuestionService } from './eventQuestionService'; // Import EventQuestionService
+import { TicketService } from './ticketServices';
+import { EventQuestionService } from './eventQuestionService';
 import { JwtPayload } from '../types/authTypes';
 import { NotFoundError, AuthorizationError, ValidationError, EventError } from '../utils/errors';
-import { UserRole } from '@prisma/client'; 
+import { UserRole } from '@prisma/client';
 
 export class EventService {
 
@@ -33,16 +31,18 @@ export class EventService {
      * 01 - Create a new event
      * @param organiserId 
      * @param eventData 
+     * @param actorUserId The ID of the user performing the creation (Organizer or Admin)
+     * @param actorUserRole The role of the user performing the creation
      * @returns 
      */
-    static async createEvent(organiserId: number, eventData: CreateEventDTO) {
+    static async createEvent(organiserId: number, eventData: CreateEventDTO, actorUserId: number, actorUserRole: UserRole) {
 
-        // Make sure the event end date is after the start date
+        // Event end date > Start date
         if (new Date(eventData.endDateTime) < new Date(eventData.startDateTime)) {
             throw new ValidationError('Event end date must be after the start date');
         }
 
-        // Make sure the event is not in the past
+        //  Event is not in the past
         if (new Date(eventData.startDateTime) < new Date()) {
             throw new ValidationError('Event start date must be in the future');
         }
@@ -103,49 +103,26 @@ export class EventService {
                 );
             }
 
-            // 3 - Create the questions and link them to the event
-            const eventQuestions = await Promise.all(
-
-                // Map over the questions array
-                eventData.questions.map(async (q) => {
-                    let questionId: number;
-
-                    // 3.1 - Try to find an existing Question by its text
-                    const existingQuestion = await tx.question.findFirst({
-                        where: { questionText: q.questionText }
-                    });
-
-                    if (existingQuestion) {
-                        questionId = existingQuestion.id;
-                    } else {
-                        // Create a new Question if it doesn't exist
-                        const newQuestion = await tx.question.create({
-                            data: {
-                                questionText: q.questionText,
-                                questionType: 'TEXT', // Default to text for now
-                                // category and validationRules could be added here if part of CreateEventDTO's question structure
-                            }
-                        });
-                        questionId = newQuestion.id;
-                    }
-
-                    // 3.2 - Link the question to the event
-                    return tx.eventQuestions.create({
-                        data: {
-                            eventId: event.id,
-                            questionId: questionId,
-                            isRequired: q.isRequired,
-                            displayOrder: q.displayOrder
-                        }
-                    });
-                })
-            );
+            // 3 - Create the questions and link them to the event using EventQuestionService
+            const createdEventQuestions = [];
+            if (eventData.questions && eventData.questions.length > 0) {
+                for (const q of eventData.questions) {
+                    const eventQuestionLink = await EventQuestionService.addQuestionToEvent(
+                        actorUserId,        // User performing the action
+                        actorUserRole,      // Role of the user performing theaction
+                        event.id,           // The newly created event's ID
+                        q,                  // The question data (AddEventQuestionLinkDTO from CreateEventDTO)
+                        tx                  // The Prisma transaction client
+                    );
+                    createdEventQuestions.push(eventQuestionLink);
+                }
+            }
 
             // 4 - Return the created events with its questions
             return {
                 ...event,
                 tickets: eventTickets,
-                questions: eventQuestions
+                questions: createdEventQuestions // Use the result from EventQuestionService
             };
         });
     };
@@ -163,33 +140,35 @@ export class EventService {
         // 2. Build the where condition object
         const where: any = {};
 
-        // 2.1. Status filter
-        if (filters.status) {
-            where.status = filters.status;
-        }
-        else {
-            // Default to only showing PUBLISHED events for non-admins/non-owners
-            // If user is admin or checking their own events, this will be overridden
-            where.status = "PUBLISHED";
-        }
-
-        // Handle admin view - admins can see all events in all statuses
-        if (filters.isAdmin) { // adminView flag is removed, isAdmin is sufficient
-            console.log('Admin view: removing status filter to show all statuses');
-            delete where.status; // Remove the status filter for admin view
-        }
-        // Handle organizer view - organizers can see their own events in all statuses
-        else if (filters.isOrganiser && filters.organiserId) {
+        // 2.1. Apply organiserId filter if it's an organizer
+        if (filters.isOrganiser && filters.organiserId) {
             where.organiserId = filters.organiserId;
+            console.log(`Filtering by organiserId: ${filters.organiserId}`);
+        }
 
-            // Organizers can see all statuses of their own events
-            if (filters.myEvents === true && !filters.status) {
-                console.log('Removing status filter for organizer view');
-                delete where.status;
+        // 2.2. Determine status filter based on role and explicit filter
+        if (filters.status) {
+            // If a status filter is explicitly provided by any role.
+            // For Admin and Organizer (their own events due to organiserId filter above), this status is applied.
+            // For Public, if they try to filter by DRAFT/CANCELLED, they will get no results if those events aren't PUBLISHED.
+            where.status = filters.status;
+            console.log(`Applying explicit status filter: ${filters.status}`);
+        } else {
+            // No explicit status filter provided in the query.
+            if (filters.isAdmin) {
+                // Admin: Show all statuses (do not add a status filter to 'where')
+                console.log('Admin view: No status filter provided, showing all event statuses.');
+            } else if (filters.isOrganiser && filters.organiserId) {
+                // Organizer (implicitly their own events due to organiserId filter): Show all their event statuses
+                console.log('Organizer view (own events): No status filter provided, showing all their event statuses.');
+            } else {
+                // Public/Default: Only show PUBLISHED events
+                console.log('Public/Default view: No status filter provided, defaulting to PUBLISHED events.');
+                where.status = "PUBLISHED";
             }
         }
 
-        // 2.2. Text search filter
+        // 2.3. Text search filter
         if (filters.search) {
             where.OR = [
                 { name: { contains: filters.search } },
@@ -217,7 +196,6 @@ export class EventService {
         }
 
         //2.6 - Free event filter
-        // Check if the filter is explicitly provided (true or false), not just truthy
         if (filters.isFree !== undefined) {
             where.isFree = filters.isFree;
         }
@@ -267,29 +245,6 @@ export class EventService {
     }
 
     /**
-     * 03 - Get event by ID
-     * @param eventId 
-     * @returns 
-     */
-    static async getEventById(eventId: number) {
-        const event = await prisma.event.findUnique({
-            where: { id: eventId },
-            include: {
-                _count: {
-                    select: { registrations: true },
-                },
-            }
-        });
-
-        if (!event) {
-            throw new NotFoundError('Event not found');
-        }
-
-        return event;
-
-    }
-
-    /**
      * 04 - Get event with details
      * @param eventId
      * @param requestingUser
@@ -311,7 +266,11 @@ export class EventService {
                 },
                 eventQuestions: {
                     include: {
-                        question: true
+                        question: { // Include the details of the linked global Question
+                            include: {
+                                options: true // Also include the options for that question
+                            }
+                        }
                     },
                     orderBy: {
                         displayOrder: 'asc'
@@ -366,13 +325,13 @@ export class EventService {
         const existingEvent = await prisma.event.findUnique({ // Fetch again for other properties if needed, or pass from helper
             where: { id: eventId },
             // Select other fields needed for validation, e.g., status, isFree
-            select: { status: true, isFree: true, endDateTime: true, startDateTime: true } 
+            select: { status: true, isFree: true, endDateTime: true, startDateTime: true }
         });
 
         if (!existingEvent) {
             // This case should ideally be caught by _ensureAdminOrEventOrganizer if it fetches the event
             // but as a safeguard or if helper only returns organiserId.
-            throw new NotFoundError('Event not found'); 
+            throw new NotFoundError('Event not found');
         }
 
         // Make sure the event is not completed
@@ -450,13 +409,13 @@ export class EventService {
                 for (const dbTicket of existingDbTickets) {
                     try {
                         // TicketService.deleteTicket will handle rules like not deleting sold tickets, with tx passed        
-                        await TicketService.deleteTicket(requestingUserId, requestingUserRole, dbTicket.id, tx); 
+                        await TicketService.deleteTicket(requestingUserId, requestingUserRole, dbTicket.id, tx);
                     } catch (error) {
                         // Log or handle error if a specific ticket cannot be deleted (e.g., sold tickets)
 
                         // This might mean the overall update strategy needs to be more nuanced than "delete all then create all"
                         // if some tickets cannot be deleted.
-                        
+
                         console.warn(`Could not delete ticket ${dbTicket.id} during event update: ${error instanceof Error ? error.message : error}`);
 
                         // Throw an error
@@ -465,20 +424,20 @@ export class EventService {
                 }
 
                 // Create new tickets from the payload
-                if (eventData.tickets && !updatedEvent.isFree) { // updatedEventData is from tx.event.update
+                if (eventData.tickets && !updatedEvent.isFree) {
                     for (const incomingTicket of eventData.tickets) {
-                    
+
                         // It also needs the event's endDateTime for validation, which updatedEventData would have.
                         await TicketService.createTicket(requestingUserId, requestingUserRole, eventId, {
-                            eventId: eventId, 
+                            eventId: eventId,
                             name: incomingTicket.name,
                             description: incomingTicket.description,
                             price: incomingTicket.price,
                             quantityTotal: incomingTicket.quantityTotal,
-                            salesStart: new Date(incomingTicket.salesStart), 
+                            salesStart: new Date(incomingTicket.salesStart),
                             salesEnd: new Date(incomingTicket.salesEnd),
                             // status will be defaulted by TicketService.createTicket if not provided
-                        }, tx); 
+                        }, tx);
                     }
                 }
             }
@@ -499,12 +458,15 @@ export class EventService {
                 // Create new EventQuestion links from the payload
                 if (eventData.questions) {
                     for (const incomingQuestion of eventData.questions) {
-                        await EventQuestionService.addQuestionToEvent(requestingUserId, requestingUserRole, eventId, {
-                            questionText: incomingQuestion.questionText,
-                            isRequired: incomingQuestion.isRequired,
-                            displayOrder: incomingQuestion.displayOrder,
-                            // questionType, category, validationRules are set to default, hence omitted for simplicity
-                        }, tx); 
+                        // Pass the entire incomingQuestion object (which is AddEventQuestionLinkDTO)
+                        // This ensures questionId, questionType, options, category, etc., are passed through
+                        await EventQuestionService.addQuestionToEvent(
+                            requestingUserId,
+                            requestingUserRole,
+                            eventId,
+                            incomingQuestion, // Pass the full DTO
+                            tx
+                        );
                     }
                 }
             }
@@ -538,7 +500,7 @@ export class EventService {
 
         if (!existingEvent) {
             // Should be caught by verifyAdminOrEventOrganizer if it checks existence properly for ADMINs too
-            throw new NotFoundError('Event not found after authorization check.'); 
+            throw new NotFoundError('Event not found after authorization check.');
         }
 
         // Validate status transition

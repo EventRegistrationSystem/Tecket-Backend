@@ -55,7 +55,7 @@ export class TicketController {
         try {
             // Read both eventId and ticketId from params
             const ticketId = parseInt(req.params.ticketId);
-            const eventId = parseInt(req.params.eventId); 
+            const eventId = parseInt(req.params.eventId);
             const userId = req.user?.userId;
             const userRole = req.user?.role as UserRole; // Extract and cast userRole
 
@@ -172,7 +172,7 @@ export class TicketController {
      */
     static async getTicketById(req: Request, res: Response): Promise<void> {
         try {
-            // Read ticketId from params (eventId is available but not needed by current service method)
+
             const ticketId = parseInt(req.params.ticketId);
             const eventId = parseInt(req.params.eventId); // Read eventId for context
 

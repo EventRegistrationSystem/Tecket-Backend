@@ -1,20 +1,70 @@
-import { Registration, UserRole, Prisma, RegistrationStatus, Participant, Attendee, Response as PrismaResponse, Purchase, Ticket, Event } from '@prisma/client'; // Import necessary models
+import { Registration, UserRole, Prisma, RegistrationStatus, Participant, Attendee, Response as PrismaResponse, Purchase, Ticket, Event, QuestionType } from '@prisma/client'; // Import necessary models, Added QuestionType
 import { prisma } from '../config/prisma';
 // DTO and types
-import { 
-    CreateRegistrationDto, 
-    CreateRegistrationResponse, 
+import {
+    CreateRegistrationDto,
+    CreateRegistrationResponse,
     ParticipantInput,
     GetRegistrationsQuery,
     GetRegistrationsForEventQuery,
-    GetAdminAllRegistrationsQuery
-} from '../types/registrationTypes'; 
+    GetAdminAllRegistrationsQuery,
+    UpdateRegistrationStatusDto
+} from '../types/registrationTypes';
 import { ParticipantService } from './participantServices';
 import { AppError, ValidationError, AuthorizationError, NotFoundError } from '../utils/errors';
 import { JwtPayload } from '../types/authTypes';
 import { Decimal } from '@prisma/client/runtime/library';
 import crypto from 'crypto'; // For generating token
 import bcrypt from 'bcrypt'; // For hashing token
+
+// Define args for fetching full registration details, mirroring getRegistrationById's includes
+const registrationFullDetailsArgs = Prisma.validator<Prisma.RegistrationDefaultArgs>()({
+    include: {
+        participant: true,
+        event: {
+            select: {
+                id: true,
+                name: true,
+                startDateTime: true,
+                organiserId: true,
+                isFree: true
+            }
+        },
+        attendees: {
+            include: {
+                participant: true,
+                responses: {
+                    include: {
+                        eventQuestion: {
+                            include: {
+                                question: { select: { id: true, questionText: true, questionType: true } }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        purchase: {
+            include: {
+                items: {
+                    select: {
+                        id: true,
+                        quantity: true,
+                        unitPrice: true,
+                        ticket: {
+                            select: {
+                                id: true,
+                                name: true
+                            }
+                        }
+                    }
+                },
+                payment: true
+            }
+        }
+    }
+});
+type DetailedRegistration = Prisma.RegistrationGetPayload<typeof registrationFullDetailsArgs>;
 
 export class RegistrationService {
     /**
@@ -32,12 +82,20 @@ export class RegistrationService {
         if (!eventId || !participants || participants.length === 0) {
             throw new ValidationError('Event ID and participant details are required.');
         }
-        
+
         const eventData = await prisma.event.findUnique({
             where: { id: eventId },
             include: {
                 tickets: (tickets && tickets.length > 0) ? { where: { id: { in: tickets.map(t => t.ticketId) } } } : undefined,
-                eventQuestions: { include: { question: true } }
+                eventQuestions: {
+                    include: {
+                        question: {
+                            include: {
+                                options: true // Ensure options are fetched for questions
+                            }
+                        }
+                    }
+                }
             }
         });
 
@@ -50,12 +108,12 @@ export class RegistrationService {
             if (!tickets || tickets.length === 0) {
                 throw new ValidationError('Tickets are required for paid events.');
             }
-        } else { 
+        } else {
             if (tickets && tickets.length > 0 && tickets.some(t => t.ticketId)) {
-                 throw new ValidationError('Cannot select specific tickets for a free event. The tickets array should be empty.');
+                throw new ValidationError('Cannot select specific tickets for a free event. The tickets array should be empty.');
             }
         }
-        
+
         let totalTicketQuantity = 0;
         if (!eventData.isFree && tickets && tickets.length > 0) {
             totalTicketQuantity = tickets.reduce((sum, t) => sum + t.quantity, 0);
@@ -77,7 +135,7 @@ export class RegistrationService {
         }
 
         let overallTotalPrice = new Decimal(0);
-        const ticketQuantities: { [key: number]: number } = {}; 
+        const ticketQuantities: { [key: number]: number } = {};
 
         if (!eventData.isFree && tickets && tickets.length > 0) {
             const now = new Date();
@@ -99,12 +157,12 @@ export class RegistrationService {
                 ticketQuantities[requestedTicket.ticketId] = requestedTicket.quantity;
             }
         } else {
-             if (tickets && tickets.some(t => t.ticketId)) { // Ensure tickets array is not just empty but also doesn't contain ticketIds
-                  throw new ValidationError('Cannot select specific tickets for a free event.');
-             }
-             if (participants.length > 1 && (!tickets || tickets.length === 0) && eventData.isFree) {
-                 console.warn("Handling multiple participants for free events without explicit tickets needs clarification on capacity impact if not 1:1.");
-             }
+            if (tickets && tickets.some(t => t.ticketId)) { // Ensure tickets array is not just empty but also doesn't contain ticketIds
+                throw new ValidationError('Cannot select specific tickets for a free event.');
+            }
+            if (participants.length > 1 && (!tickets || tickets.length === 0) && eventData.isFree) {
+                console.warn("Handling multiple participants for free events without explicit tickets needs clarification on capacity impact if not 1:1.");
+            }
         }
 
         const eventQuestionMap = new Map(eventData.eventQuestions.map(eq => [eq.id, eq]));
@@ -127,12 +185,94 @@ export class RegistrationService {
                 if (!eventQuestionMap.has(providedEqId)) {
                     throw new ValidationError(`Invalid event question ID ${providedEqId} provided for participant ${participant.firstName} ${participant.lastName}.`);
                 }
+
+                // Validate DROPDOWN question responses
+                const eventQuestion = eventQuestionMap.get(providedEqId)!; // We've confirmed it exists
+                if (eventQuestion.question.questionType === QuestionType.DROPDOWN) {
+                    const responseForQuestion = participant.responses.find(r => r.eventQuestionId === providedEqId);
+                    if (responseForQuestion) { // Only validate if a response is provided
+                        const responseText = responseForQuestion.responseText;
+                        const validOptions = eventQuestion.question.options;
+
+                        if (eventQuestion.isRequired && responseText.trim() === '') {
+                            // This case is already handled by the requiredQuestionIds check,
+                            // but an explicit check here for DROPDOWN is fine for clarity if needed.
+                            // For now, relying on the earlier check for empty required responses.
+                        }
+
+                        if (responseText.trim() !== '') { // Only validate non-empty responses against options
+                            if (!validOptions || validOptions.length === 0) {
+                                throw new ValidationError(`Question "${eventQuestion.question.questionText}" is a DROPDOWN type but has no defined options. Cannot validate response "${responseText}".`);
+                            }
+                            const isValidOption = validOptions.some(opt => opt.optionText === responseText);
+                            if (!isValidOption) {
+                                throw new ValidationError(
+                                    `Invalid option "${responseText}" provided for question "${eventQuestion.question.questionText}" for participant ${participant.firstName} ${participant.lastName}. ` +
+                                    `Valid options are: ${validOptions.map(opt => opt.optionText).join(', ')}.`
+                                );
+                            }
+                        }
+                    }
+                } else if (eventQuestion.question.questionType === QuestionType.CHECKBOX) {
+                    const responseForQuestion = participant.responses.find(r => r.eventQuestionId === providedEqId);
+                    if (responseForQuestion) { // Only validate if a response is provided
+                        const responseText = responseForQuestion.responseText;
+                        const validOptions = eventQuestion.question.options;
+
+                        if (responseText.trim() !== '') { // Only validate non-empty responses
+                            let selectedOptions: string[] = [];
+                            try {
+                                selectedOptions = JSON.parse(responseText);
+                                if (!Array.isArray(selectedOptions) || !selectedOptions.every(item => typeof item === 'string')) {
+                                    throw new Error('Response for CHECKBOX must be a JSON array of strings.');
+                                }
+                            } catch (e) {
+                                throw new ValidationError(
+                                    `Invalid response format for question "${eventQuestion.question.questionText}" for participant ${participant.firstName} ${participant.lastName}. Expected a JSON array of strings.`
+                                );
+                            }
+
+                            if (eventQuestion.isRequired && selectedOptions.length === 0) {
+                                throw new ValidationError(
+                                    `At least one option must be selected for required question "${eventQuestion.question.questionText}" for participant ${participant.firstName} ${participant.lastName}.`
+                                );
+                            }
+
+                            if (!validOptions || validOptions.length === 0) {
+                                // This case implies a CHECKBOX question was defined without options, which is problematic if answered.
+                                if (selectedOptions.length > 0) {
+                                    throw new ValidationError(`Question "${eventQuestion.question.questionText}" is a CHECKBOX type but has no defined options. Cannot validate response.`);
+                                }
+                            } else {
+                                for (const selectedOpt of selectedOptions) {
+                                    const isValidOption = validOptions.some(opt => opt.optionText === selectedOpt);
+                                    if (!isValidOption) {
+                                        throw new ValidationError(
+                                            `Invalid option "${selectedOpt}" provided for question "${eventQuestion.question.questionText}" for participant ${participant.firstName} ${participant.lastName}. ` +
+                                            `Valid options are: ${validOptions.map(opt => opt.optionText).join(', ')}.`
+                                        );
+                                    }
+                                }
+                            }
+                        } else if (eventQuestion.isRequired) {
+                            // Empty responseText for a required CHECKBOX question
+                            throw new ValidationError(
+                                `At least one option must be selected for required question "${eventQuestion.question.questionText}" for participant ${participant.firstName} ${participant.lastName}.`
+                            );
+                        }
+                    } else if (eventQuestion.isRequired) {
+                        // No response object found for a required CHECKBOX question
+                        throw new ValidationError(
+                            `Response required for question "${eventQuestion.question.questionText}" for participant ${participant.firstName} ${participant.lastName}.`
+                        );
+                    }
+                }
             }
         }
 
-         return prisma.$transaction(async (tx) => {
-             let generatedPlaintextToken: string | undefined = undefined; 
- 
+        return prisma.$transaction(async (tx) => {
+            let generatedPlaintextToken: string | undefined = undefined;
+
             if (!eventData.isFree && tickets && tickets.length > 0) { // Check tickets array again for safety
                 const ticketIds = Object.keys(ticketQuantities).map(Number);
                 const currentTickets = await tx.ticket.findMany({
@@ -152,8 +292,8 @@ export class RegistrationService {
             const registration = await tx.registration.create({
                 data: {
                     eventId: eventId,
-                    participantId: primaryParticipant.id, 
-                    userId: userId, 
+                    participantId: primaryParticipant.id,
+                    userId: userId,
                     status: eventData.isFree ? RegistrationStatus.CONFIRMED : RegistrationStatus.PENDING
                 }
             });
@@ -173,12 +313,12 @@ export class RegistrationService {
                     if (!dbTicket) {
                         throw new Error(`Consistency error: Ticket ${ticketRequest.ticketId} not found during purchase item creation.`);
                     }
-                    return tx.purchaseItem.create({ 
+                    return tx.purchaseItem.create({
                         data: {
                             purchaseId: newPurchaseId,
                             ticketId: ticketRequest.ticketId,
                             quantity: ticketRequest.quantity,
-                            unitPrice: dbTicket.price 
+                            unitPrice: dbTicket.price
                         }
                     });
                 });
@@ -190,29 +330,29 @@ export class RegistrationService {
                         data: { quantitySold: { increment: ticketRequest.quantity } }
                     });
                 });
-                 await Promise.all(ticketUpdatePromises);
- 
-                  if (!userId) { 
-                      const plaintextToken = crypto.randomUUID();
-                      const saltRounds = 10; 
-                     const hashedToken = await bcrypt.hash(plaintextToken, saltRounds);
-                     const expiryMinutes = 60; 
-                     const expiryDate = new Date(Date.now() + expiryMinutes * 60 * 1000);
-                     await tx.purchase.update({
-                         where: { id: newPurchaseId },
-                         data: {
-                             paymentToken: hashedToken,
-                             paymentTokenExpiry: expiryDate,
-                         },
-                     });
-                     generatedPlaintextToken = plaintextToken; 
-                 }
-             }
+                await Promise.all(ticketUpdatePromises);
+
+                if (!userId) {
+                    const plaintextToken = crypto.randomUUID();
+                    const saltRounds = 10;
+                    const hashedToken = await bcrypt.hash(plaintextToken, saltRounds);
+                    const expiryMinutes = 60;
+                    const expiryDate = new Date(Date.now() + expiryMinutes * 60 * 1000);
+                    await tx.purchase.update({
+                        where: { id: newPurchaseId },
+                        data: {
+                            paymentToken: hashedToken,
+                            paymentTokenExpiry: expiryDate,
+                        },
+                    });
+                    generatedPlaintextToken = plaintextToken;
+                }
+            }
 
             const attendeePromises = participants.map(async (participantInput) => {
                 let currentParticipantId: number;
-                if (participantInput.email === primaryParticipantInput.email) { 
-                     currentParticipantId = primaryParticipant.id;
+                if (participantInput.email === primaryParticipantInput.email) {
+                    currentParticipantId = primaryParticipant.id;
                 } else {
                     const participant = await ParticipantService.findOrCreateParticipant(participantInput, tx);
                     currentParticipantId = participant.id;
@@ -226,12 +366,12 @@ export class RegistrationService {
                 const responsePromises = participantInput.responses.map(response => {
                     const eventQuestion = eventQuestionMap.get(response.eventQuestionId);
                     if (!eventQuestion) {
-                         throw new Error(`Consistency error: EventQuestion mapping not found for eventQuestionId: ${response.eventQuestionId}`);
+                        throw new Error(`Consistency error: EventQuestion mapping not found for eventQuestionId: ${response.eventQuestionId}`);
                     }
                     return tx.response.create({
                         data: {
-                            attendeeId: attendee.id, 
-                            eqId: eventQuestion.id, 
+                            attendeeId: attendee.id,
+                            eqId: eventQuestion.id,
                             responseText: response.responseText
                         }
                     });
@@ -240,15 +380,15 @@ export class RegistrationService {
             });
             await Promise.all(attendeePromises);
 
-             const response: CreateRegistrationResponse = {
-                 message: eventData.isFree ? "Registration confirmed" : "Registration pending payment",
-                 registrationId: newRegistrationId
-             };
-             if (generatedPlaintextToken) {
-                 response.paymentToken = generatedPlaintextToken;
-             }
-             return response;
-         });
+            const response: CreateRegistrationResponse = {
+                message: eventData.isFree ? "Registration confirmed" : "Registration pending payment",
+                registrationId: newRegistrationId
+            };
+            if (generatedPlaintextToken) {
+                response.paymentToken = generatedPlaintextToken;
+            }
+            return response;
+        });
     }
 
     static async getRegistrations(query: GetRegistrationsQuery, authUser: JwtPayload) {
@@ -285,7 +425,7 @@ export class RegistrationService {
         }
 
         if (!isAuthorized) { // Should be redundant if logic above is correct, but as a safeguard
-             throw new AuthorizationError('Forbidden: You do not have permission to view these registrations.');
+            throw new AuthorizationError('Forbidden: You do not have permission to view these registrations.');
         }
 
         const [registrations, totalCount] = await prisma.$transaction([
@@ -314,7 +454,7 @@ export class RegistrationService {
         ]);
         return { registrations, totalCount };
     }
-    
+
     static async getRegistrationsForEvent(
         eventId: number,
         query: GetRegistrationsForEventQuery,
@@ -372,13 +512,13 @@ export class RegistrationService {
 
         type RegistrationWithDetails = Prisma.RegistrationGetPayload<{
             include: {
-                participant: { 
+                participant: {
                     select: { firstName: true, lastName: true, email: true }
                 },
-                attendees: { 
+                attendees: {
                     select: { id: true }
                 },
-                purchase: { 
+                purchase: {
                     select: { totalPrice: true }
                 }
             }
@@ -391,17 +531,17 @@ export class RegistrationService {
                 take: limit,
                 orderBy: { created_at: 'desc' },
                 include: {
-                    participant: { 
+                    participant: {
                         select: { firstName: true, lastName: true, email: true }
                     },
-                    attendees: { 
+                    attendees: {
                         select: { id: true }
                     },
-                    purchase: { 
+                    purchase: {
                         select: { totalPrice: true }
                     }
                 }
-            }), 
+            }),
             prisma.registration.count({ where: whereInput })
         ]);
         const registrations = transactionResult[0] as RegistrationWithDetails[];
@@ -435,38 +575,38 @@ export class RegistrationService {
         type RegistrationFullDetails = Prisma.RegistrationGetPayload<{
             include: {
                 participant: true,
-                event: { 
-                    select: { 
-                        id: true, 
-                        name: true, 
+                event: {
+                    select: {
+                        id: true,
+                        name: true,
                         startDateTime: true, // Corrected field name from schema
                         // endDateTime: true, // Also available if needed
-                        organiserId: true, 
-                        isFree: true 
-                    } 
+                        organiserId: true,
+                        isFree: true
+                    }
                 },
                 attendees: {
                     include: {
                         participant: true,
-                        responses: { 
+                        responses: {
                             include: {
-                                eventQuestion: { 
-                                    include: { 
-                                        question: { select: { id:true, questionText: true, questionType: true }} 
-                                    } 
-                                } 
+                                eventQuestion: {
+                                    include: {
+                                        question: { select: { id: true, questionText: true, questionType: true } }
+                                    }
+                                }
                             }
                         }
                     }
                 },
                 purchase: {
                     include: {
-                        items: { 
+                        items: {
                             select: {
                                 id: true,
                                 quantity: true,
                                 unitPrice: true,
-                                ticket: { 
+                                ticket: {
                                     select: {
                                         id: true,
                                         name: true
@@ -486,26 +626,26 @@ export class RegistrationService {
             where: { id: registrationId },
             include: {
                 participant: true, // Primary participant details
-                event: { 
-                    select: { 
-                        id: true, 
-                        name: true, 
+                event: {
+                    select: {
+                        id: true,
+                        name: true,
                         startDateTime: true, // Corrected field name from schema
                         // endDateTime: true, // Also available if needed
-                        organiserId: true, 
-                        isFree: true 
-                    } 
-                }, 
+                        organiserId: true,
+                        isFree: true
+                    }
+                },
                 attendees: {
                     include: {
                         participant: true, // Full participant details for each attendee
-                        responses: { 
+                        responses: {
                             include: {
                                 eventQuestion: { // To get the actual question text
-                                    include: { 
-                                        question: { select: { id:true, questionText: true, questionType: true }} 
-                                    } 
-                                } 
+                                    include: {
+                                        question: { select: { id: true, questionText: true, questionType: true } }
+                                    }
+                                }
                             }
                         }
                     }
@@ -534,8 +674,8 @@ export class RegistrationService {
             throw new NotFoundError('Registration not found');
         }
         const isOwner = registration.userId === authUser.userId ||
-                       (registration.participant?.userId !== null && registration.participant?.userId === authUser.userId); 
-        const isEventOrganizer = registration.event?.organiserId === authUser.userId; 
+            (registration.participant?.userId !== null && registration.participant?.userId === authUser.userId);
+        const isEventOrganizer = registration.event?.organiserId === authUser.userId;
         const isAdmin = authUser.role === UserRole.ADMIN;
         if (!isOwner && !isEventOrganizer && !isAdmin) {
             throw new AuthorizationError('Forbidden: You do not have permission to view this registration.');
@@ -549,8 +689,8 @@ export class RegistrationService {
             include: {
                 event: { select: { id: true, isFree: true } },
                 purchase: { select: { id: true } },
-                participant: { select: { userId: true } }, 
-                user: { select: { id: true } } 
+                participant: { select: { userId: true } },
+                user: { select: { id: true } }
             }
         });
         if (!registration) {
@@ -558,54 +698,54 @@ export class RegistrationService {
         }
         const isAdmin = requestingUser.role === UserRole.ADMIN;
         const isOwner = registration.userId === requestingUser.userId ||
-                       (registration.participant?.userId !== null && registration.participant?.userId === requestingUser.userId);
+            (registration.participant?.userId !== null && registration.participant?.userId === requestingUser.userId);
         if (!isAdmin && !isOwner) {
             throw new AuthorizationError('Forbidden: You do not have permission to cancel this registration.');
         }
         if (registration.status === RegistrationStatus.CANCELLED) {
-             return registration; 
+            return registration;
         }
         if (registration.status !== RegistrationStatus.CONFIRMED && registration.status !== RegistrationStatus.PENDING) {
-             throw new ValidationError(`Cannot cancel registration with status: ${registration.status}`);
+            throw new ValidationError(`Cannot cancel registration with status: ${registration.status}`);
         }
 
         return prisma.$transaction(async (tx) => {
             const updatedRegistration = await tx.registration.update({
                 where: { id: registrationId },
                 data: { status: RegistrationStatus.CANCELLED },
-                 include: { 
+                include: {
                     participant: true,
                     event: { select: { id: true, name: true, isFree: true } },
-                    purchase: { 
+                    purchase: {
                         include: {
-                            items: { 
+                            items: {
                                 include: {
-                                    ticket: true 
+                                    ticket: true
                                 }
                             }
                         }
                     },
-                    attendees: { include: { participant: true } } 
+                    attendees: { include: { participant: true } }
                 }
             });
             if (!registration.event.isFree && registration.purchase) {
-                 const purchaseItems = await tx.purchaseItem.findMany({
-                     where: { purchaseId: registration.purchase.id } 
-                 });
-                 const ticketUpdatePromises = purchaseItems.map(item => {
-                     return tx.ticket.updateMany({ 
-                         where: { id: item.ticketId },
-                         data: {
-                             quantitySold: {
-                                 decrement: item.quantity
-                             }
-                         }
-                     }).catch(err => {
-                         console.warn(`Failed to decrement quantity for Ticket ID ${item.ticketId} during cancellation for registration ${registrationId}:`, err);
-                     });
-                 });
-                 await Promise.all(ticketUpdatePromises);
-                 // TODO: Implement refund logic here in a future step
+                const purchaseItems = await tx.purchaseItem.findMany({
+                    where: { purchaseId: registration.purchase.id }
+                });
+                const ticketUpdatePromises = purchaseItems.map(item => {
+                    return tx.ticket.updateMany({
+                        where: { id: item.ticketId },
+                        data: {
+                            quantitySold: {
+                                decrement: item.quantity
+                            }
+                        }
+                    }).catch(err => {
+                        console.warn(`Failed to decrement quantity for Ticket ID ${item.ticketId} during cancellation for registration ${registrationId}:`, err);
+                    });
+                });
+                await Promise.all(ticketUpdatePromises);
+                // TODO: Implement refund logic here in a future step
             }
             return updatedRegistration;
         });
@@ -619,15 +759,15 @@ export class RegistrationService {
             throw new AuthorizationError('Forbidden: You do not have permission to access this resource.');
         }
 
-        const { 
-            page = 1, 
-            limit = 10, 
-            search, 
-            status, 
-            ticketId, 
-            eventId, 
-            userId, 
-            participantId 
+        const {
+            page = 1,
+            limit = 10,
+            search,
+            status,
+            ticketId,
+            eventId,
+            userId,
+            participantId
         } = query;
         const skip = (page - 1) * limit;
 
@@ -653,29 +793,37 @@ export class RegistrationService {
                 { participant: { firstName: { contains: searchLower } } },
                 { participant: { lastName: { contains: searchLower } } },
                 { participant: { email: { contains: searchLower } } },
-                { attendees: { some: { participant: { OR: [
-                    { firstName: { contains: searchLower } },
-                    { lastName: { contains: searchLower } },
-                    { email: { contains: searchLower } },
-                ]}}}},
+                {
+                    attendees: {
+                        some: {
+                            participant: {
+                                OR: [
+                                    { firstName: { contains: searchLower } },
+                                    { lastName: { contains: searchLower } },
+                                    { email: { contains: searchLower } },
+                                ]
+                            }
+                        }
+                    }
+                },
             ];
             andConditions.push({ OR: searchORConditions });
         }
-        
+
         const finalWhereInput: Prisma.RegistrationWhereInput = andConditions.length > 0 ? { AND: andConditions } : {};
-        
+
         type AdminRegistrationWithDetails = Prisma.RegistrationGetPayload<{
             include: {
-                participant: { 
+                participant: {
                     select: { firstName: true, lastName: true, email: true }
                 },
-                event: { 
+                event: {
                     select: { name: true }
                 },
-                attendees: { 
+                attendees: {
                     select: { id: true }
                 },
-                purchase: { 
+                purchase: {
                     select: { totalPrice: true }
                 }
             }
@@ -688,7 +836,7 @@ export class RegistrationService {
                 take: limit,
                 orderBy: { created_at: 'desc' },
                 include: {
-                    participant: { 
+                    participant: {
                         select: { firstName: true, lastName: true, email: true }
                     },
                     event: {
@@ -713,7 +861,7 @@ export class RegistrationService {
             return {
                 registrationId: reg.id,
                 registrationDate: reg.created_at,
-                eventName: reg.event.name, 
+                eventName: reg.event.name,
                 primaryParticipantName: primaryParticipantName,
                 primaryParticipantEmail: reg.participant.email,
                 numberOfAttendees: reg.attendees.length,
@@ -731,5 +879,82 @@ export class RegistrationService {
                 totalPages: Math.ceil(totalCount / limit)
             }
         };
+    }
+
+    static async updateRegistrationStatus(
+        registrationId: number,
+        dto: UpdateRegistrationStatusDto,
+        requestingUser: JwtPayload
+    ): Promise<DetailedRegistration> {
+        const { status: newStatus } = dto;
+
+        const registrationForAuth = await prisma.registration.findUnique({
+            where: { id: registrationId },
+            include: {
+                event: { select: { id: true, organiserId: true, isFree: true } },
+                purchase: { include: { items: true } }, // For ticket stock adjustment
+            }
+        });
+
+        if (!registrationForAuth) {
+            throw new NotFoundError('Registration not found.');
+        }
+
+        const isAdmin = requestingUser.role === UserRole.ADMIN;
+        const isEventOrganizer = registrationForAuth.event?.organiserId === requestingUser.userId;
+
+        if (!isAdmin && !isEventOrganizer) {
+            throw new AuthorizationError('Forbidden: You do not have permission to update this registration status.');
+        }
+
+        const currentStatus = registrationForAuth.status;
+
+        if (currentStatus === newStatus) {
+            // If status is not changing, just return the full details.
+            // getRegistrationById returns Promise<RegistrationFullDetails>, which is compatible with Promise<DetailedRegistration>
+            // if RegistrationFullDetails is structurally identical or a superset of DetailedRegistration.
+            // The explicit cast `as unknown as DetailedRegistration` handles potential nominal type differences
+            // if `getRegistrationById`'s internal `RegistrationFullDetails` type isn't exported or directly used here.
+            // Given `registrationFullDetailsArgs` mirrors `getRegistrationById`'s includes, this should be safe.
+            return this.getRegistrationById(registrationId, requestingUser) as unknown as DetailedRegistration;
+        }
+
+        if (currentStatus === RegistrationStatus.CANCELLED) {
+            throw new ValidationError('Cannot change status of a cancelled registration.');
+        }
+        // Add any other specific disallowed transitions here if needed.
+        // E.g., if (currentStatus === RegistrationStatus.CONFIRMED && newStatus === RegistrationStatus.PENDING) {
+        //     throw new ValidationError('Cannot change a confirmed registration back to pending.');
+        // }
+
+        await prisma.$transaction(async (tx) => {
+            await tx.registration.update({
+                where: { id: registrationId },
+                data: { status: newStatus },
+            });
+
+            if (newStatus === RegistrationStatus.CANCELLED &&
+                (currentStatus === RegistrationStatus.CONFIRMED || currentStatus === RegistrationStatus.PENDING)) {
+                if (!registrationForAuth.event.isFree && registrationForAuth.purchase && registrationForAuth.purchase.items.length > 0) {
+                    const ticketUpdatePromises = registrationForAuth.purchase.items.map(item => {
+                        return tx.ticket.updateMany({
+                            where: { id: item.ticketId },
+                            data: {
+                                quantitySold: {
+                                    decrement: item.quantity
+                                }
+                            }
+                        }).catch(err => {
+                            console.warn(`Failed to decrement quantity for Ticket ID ${item.ticketId} during status update to CANCELLED for registration ${registrationId}:`, err);
+                        });
+                    });
+                    await Promise.all(ticketUpdatePromises);
+                    // TODO: Implement refund logic if transitioning from CONFIRMED to CANCELLED for paid events.
+                }
+            }
+        });
+
+        // After transaction, fetch and return the full, updated registration details.
+        return this.getRegistrationById(registrationId, requestingUser) as unknown as DetailedRegistration;
     }
 }

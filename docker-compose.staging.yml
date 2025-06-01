@@ -1,0 +1,41 @@
+services:
+  # Staging backend service
+  app: 
+    build: .
+    container_name: tecket-staging-app 
+    ports:
+      - "3001:3000" # Port 3001
+    env_file:
+      - .env.staging 
+    depends_on:
+      db: # Depends on the 'db' service within this file
+        condition: service_healthy
+    restart: unless-stopped
+    user: "node"
+    # Include the seed script after migrations for staging
+    command: sh -c "npx prisma migrate deploy && npm run db:seed && npm start"
+
+  # Staging database service
+  db: 
+    image: mysql:8.0
+    container_name: tecket-staging-db 
+    environment:
+      MYSQL_ROOT_PASSWORD: ${STAGING_MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${STAGING_MYSQL_DATABASE}
+      MYSQL_USER: ${STAGING_MYSQL_USER}
+      MYSQL_PASSWORD: ${STAGING_MYSQL_PASSWORD}
+    volumes:
+      - tecket_staging_mysql_data:/var/lib/mysql # Specific volume for staging data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost", "-u${STAGING_MYSQL_USER}", "-p${STAGING_MYSQL_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # To access DB directly from host (optional, ensure port is unique)
+    # ports:
+    #   - "33061:3306"
+
+volumes:
+  tecket_staging_mysql_data: 
+    name: tecket_staging_mysql_data 

@@ -1,6 +1,7 @@
-import express from "express"; // Reverted import
-import cookieParser from "cookie-parser";
-import cors from "cors";
+
+import express from 'express'; 
+import cookieParser from 'cookie-parser';
+import cors from 'cors';
 
 // Importing routes
 import authRoutes from "./routes/authRoutes";

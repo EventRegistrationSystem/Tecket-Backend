@@ -1,7 +1,7 @@
 import { prisma } from '../config/prisma';
 import { AddEventQuestionLinkDTO, UpdateEventQuestionLinkDTO, EventQuestionWithQuestionDetails } from '../types/questionTypes';
 import { AuthorizationError, ValidationError, NotFoundError } from '../utils/errors';
-import { UserRole, Prisma } from '@prisma/client'; // Import UserRole and Prisma
+import { UserRole, Prisma, QuestionType } from '@prisma/client';
 
 // Define a type for the Prisma transaction client
 type PrismaTransactionClient = Omit<Prisma.TransactionClient, "$commit" | "$rollback">;
@@ -15,24 +15,23 @@ export class EventQuestionService {
      * @param eventId - The ID of the event.
      * @param tx Optional Prisma transaction client
      */
-    private static async verifyAdminOrEventOrganizer(userId: number, userRole: UserRole, eventId: number, tx?: PrismaTransactionClient): Promise<void> {
+    private static async verifyAdminOrEventOrganizer(
+        userId: number,
+        userRole: UserRole,
+        eventId: number,
+        tx?: PrismaTransactionClient
+    ): Promise<void> {
         const prismaClient = tx || prisma;
-        if (userRole === UserRole.ADMIN) {
-            const eventExists = await prismaClient.event.count({ where: { id: eventId } });
-            if (eventExists === 0) {
-                throw new NotFoundError('Event not found');
-            }
-            return; 
-        }
 
         const event = await prismaClient.event.findUnique({
             where: { id: eventId },
             select: { organiserId: true }
         });
+
         if (!event) {
             throw new NotFoundError('Event not found');
         }
-        if (event.organiserId !== userId) {
+        if (userRole !== UserRole.ADMIN && event.organiserId !== userId) {
             throw new AuthorizationError('You are not authorized to manage questions for this event.');
         }
     }
@@ -51,7 +50,11 @@ export class EventQuestionService {
         return prismaClient.eventQuestions.findMany({
             where: { eventId },
             include: {
-                question: true, // Include the details of the linked global Question
+                question: {
+                    include: {
+                        options: true
+                    }
+                },
                 _count: {
                     select: { responses: true }
                 }
@@ -86,19 +89,25 @@ export class EventQuestionService {
             const existingGlobalQuestion = await prismaClient.question.findFirst({
                 where: { questionText: data.questionText }
             });
-            if (existingGlobalQuestion) {
-                questionId = existingGlobalQuestion.id;
-            } else {
-                const newGlobalQuestion = await prismaClient.question.create({
-                    data: {
-                        questionText: data.questionText,
-                        questionType: data.questionType || 'TEXT',
-                        category: data.category,
-                        validationRules: data.validationRules || undefined,
-                    }
-                });
-                questionId = newGlobalQuestion.id;
-            }
+            const newGlobalQuestion = await prismaClient.question.create({
+                data: {
+                    questionText: data.questionText,
+                    questionType: data.questionType || 'TEXT',
+                    category: data.category,
+                    validationRules: data.validationRules || undefined,
+                    // Conditionally create options if the type is DROPDOWN or CHECKBOX and options are provided
+                    options: ((data.questionType === QuestionType.DROPDOWN || data.questionType === QuestionType.CHECKBOX) && data.options && data.options.length > 0)
+                        ? {
+                            create: data.options.map(opt => ({
+                                optionText: opt.optionText,
+                                displayOrder: opt.displayOrder
+                                // id from opt is ignored here as these are new options for a new question
+                            }))
+                        }
+                        : undefined
+                }
+            });
+            questionId = newGlobalQuestion.id;
         } else {
             throw new ValidationError('Either questionId or questionText must be provided.');
         }

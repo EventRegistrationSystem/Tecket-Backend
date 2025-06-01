@@ -14,19 +14,23 @@ export class EventController {
         try {
 
 
-            // const organiserId = 2;
-            const organiserId = req.user?.userId;
+            const requestingUser = req.user;
 
-            if (!organiserId) {
+            if (!requestingUser || !requestingUser.userId || !requestingUser.role) {
+                // If the user is not authenticated, return a 401 Unauthorized response
                 res.status(401).json({
                     success: false,
-                    message: 'Authentication required'
+                    message: 'Authentication required: User ID and role are missing.'
                 });
                 return;
             }
 
-            // Create event
-            const event = await EventService.createEvent(organiserId, req.body);
+            const event = await EventService.createEvent(
+                requestingUser.userId, // organiserId for the Event record
+                req.body,              // eventData
+                requestingUser.userId, // actorUserId - the user performing the action
+                requestingUser.role    // actorUserRole - role of the user performing the action
+            );
 
             res.status(201).json({
                 success: true,
@@ -35,7 +39,7 @@ export class EventController {
             });
         }
         catch (error: any) {
-            console.error("Error creating event: ", error); // Changed to console.error
+            console.error("Error creating event: ", error);
             if (error instanceof AuthenticationError) {
                 res.status(error.statusCode || 401).json({ success: false, message: error.message });
             } else if (error instanceof AuthorizationError) {
@@ -47,7 +51,7 @@ export class EventController {
             } else {
                 res.status(500).json({
                     success: false,
-                    message: 'Internal server error creating event.', // Standardized message
+                    message: 'Internal server error creating event.',
                     error: process.env.NODE_ENV === 'development' ? error.message : undefined
                 });
             }
@@ -76,6 +80,11 @@ export class EventController {
                     req.query.isFree === 'false' ? false : undefined,
             };
 
+            // 2.1 Add status from query if present, before role-specific logic potentially overrides it
+            if (req.query.status) {
+                filters.status = req.query.status as string;
+            }
+
             //3. Handle date filters
             if (req.query.startDate) {
                 filters.startDate = new Date(req.query.startDate as string);
@@ -93,7 +102,7 @@ export class EventController {
                 if (req.user.role === 'ADMIN') {
                     console.log('User is an admin');
                     filters.isAdmin = true;
-                    // Admin view toggle removed - admin sees all by default if isAdmin is true
+                    // Admins can view all events, no additional filters needed
                 }
                 else if (req.user.role === 'ORGANIZER') {
                     console.log('User is an organizer');

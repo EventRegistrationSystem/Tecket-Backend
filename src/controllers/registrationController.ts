@@ -1,15 +1,17 @@
 import { Request, Response, NextFunction } from 'express';
 import { RegistrationService } from '../services/registrationServices';
 import {
-    registrationValidationSchema, // This schema will need updating
+    registrationValidationSchema,
     getRegistrationsQuerySchema,
-    getRegistrationParamsSchema
+    getRegistrationParamsSchema,
+    updateRegistrationStatusSchema // Import the new schema
 } from '../validation/registrationValidation';
 // Use the new DTOs and Query Types
-import { 
-    CreateRegistrationDto, 
+import {
+    CreateRegistrationDto,
     CreateRegistrationResponse,
-    GetAdminAllRegistrationsQuery // Import the new query type
+    GetAdminAllRegistrationsQuery, // Import the new query type
+    UpdateRegistrationStatusDto
 } from '../types/registrationTypes';
 import { AppError, AuthorizationError, ValidationError } from '../utils/errors';
 import { RegistrationStatus } from '@prisma/client'; // Added for status validation/typing
@@ -23,7 +25,7 @@ export class RegistrationController {
         try {
             // TODO: Update registrationValidationSchema to match CreateRegistrationDto structure
             // For now, assume basic validation or skip for initial refactor
-            
+
             // const { error, value } = registrationValidationSchema.validate(req.body);
             // if (error) {
             //     throw new ValidationError(`Validation failed: ${error.details.map(x => x.message).join(', ')}`);
@@ -36,7 +38,7 @@ export class RegistrationController {
 
             // Add userId from authenticated user if available
             if (req.user && req.user.userId) {
-                 finalUserId = req.user.userId;
+                finalUserId = req.user.userId;
             }
             // If req.user is not present, finalUserId remains undefined (guest)
             // Any userId potentially in registrationDataFromRequest for a guest is ignored.
@@ -140,16 +142,16 @@ export class RegistrationController {
     static async cancelRegistration(req: Request, res: Response, next: NextFunction): Promise<void> {
         try {
             // 1. Validate path parameter
-             const { error: paramsError, value: paramsValue } = getRegistrationParamsSchema.validate(req.params);
-             if (paramsError) {
-                 throw new ValidationError(`Invalid registration ID: ${paramsError.details.map(x => x.message).join(', ')}`);
-             }
-             const { registrationId } = paramsValue;
+            const { error: paramsError, value: paramsValue } = getRegistrationParamsSchema.validate(req.params);
+            if (paramsError) {
+                throw new ValidationError(`Invalid registration ID: ${paramsError.details.map(x => x.message).join(', ')}`);
+            }
+            const { registrationId } = paramsValue;
 
             // 2. Validate request body (ensure status is 'CANCELLED')
             const status = req.body.status;
             if (status !== 'CANCELLED') {
-                 throw new ValidationError("Invalid status update. Only 'CANCELLED' is allowed via this endpoint.");
+                throw new ValidationError("Invalid status update. Only 'CANCELLED' is allowed via this endpoint.");
             }
 
 
@@ -167,7 +169,7 @@ export class RegistrationController {
                 data: updatedRegistration
             });
 
-        } catch(err) {
+        } catch (err) {
             next(err); // Pass error to global handler
         }
     }
@@ -189,7 +191,7 @@ export class RegistrationController {
             if (!req.user) {
                 throw new AppError(401, 'Authentication required.');
             }
-            
+
             // 3. Parse and prepare query parameters for the service
             // TODO: Implement Joi validation for these query parameters
             const { page, limit, search, status, ticketId } = req.query;
@@ -221,7 +223,7 @@ export class RegistrationController {
             // The service method `getRegistrationsForEvent` expects query parameters as its second argument.
             // We need to ensure the structure matches `GetRegistrationsForEventQuery` from the service.
             // The service method signature is: getRegistrationsForEvent(eventId: number, query: GetRegistrationsForEventQuery, authUser: JwtPayload)
-            
+
             const result = await RegistrationService.getRegistrationsForEvent(
                 eventId,
                 { // Construct the query object matching GetRegistrationsForEventQuery
@@ -256,12 +258,12 @@ export class RegistrationController {
             if (!req.user) {
                 throw new AppError(401, 'Authentication required.');
             }
-            
+
             // 2. Parse and prepare query parameters for the service
             // TODO: Implement Joi validation for these query parameters
-            const { 
-                page, limit, search, status, ticketId, 
-                eventId, userId, participantId 
+            const {
+                page, limit, search, status, ticketId,
+                eventId, userId, participantId
             } = req.query;
 
             const queryParams: GetAdminAllRegistrationsQuery = {}; // Use the imported type
@@ -293,6 +295,35 @@ export class RegistrationController {
             res.status(200).json({
                 message: `All registrations retrieved successfully for admin view`,
                 ...result // result contains data and pagination
+            });
+
+        } catch (err) {
+            next(err);
+        }
+    }
+
+    static async updateRegistrationStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
+        try {
+            const { registrationId } = req.params;
+            const { status } = req.body as UpdateRegistrationStatusDto;
+
+            if (!req.user) {
+                // This should ideally be caught by authentication middleware
+                throw new AppError(401, 'Authentication required');
+            }
+
+            // The validation middleware should have already validated params and body
+            // based on getRegistrationParamsSchema and updateRegistrationStatusSchema
+
+            const updatedRegistration = await RegistrationService.updateRegistrationStatus(
+                parseInt(registrationId, 10),
+                { status },
+                req.user
+            );
+
+            res.status(200).json({
+                message: 'Registration status updated successfully',
+                data: updatedRegistration
             });
 
         } catch (err) {

@@ -8,11 +8,10 @@ export class AuthController {
     private static readonly REFRESH_TOKEN_COOKIE_OPTIONS = {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production', // HTTPS only in production
-        sameSite: 'strict' as const, // Reverted to original 'strict'
-        // sameSite: (process.env.NODE_ENV === 'production' ? 'strict' : 'lax') as 'strict' | 'lax' | 'none' | undefined,
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+        sameSite: 'strict' as const,
+        maxAge: 7 * 24 * 60 * 60 * 1000,
         path: '/'  // Cookie is available for all paths
-    }; 
+    };
 
     //01 - Register a new user
     static async registerUser(req: Request<{}, {}, RegisterDto>, res: Response) {
@@ -41,7 +40,6 @@ export class AuthController {
                     error: process.env.NODE_ENV !== 'production' ? String(error) : undefined
                 });
             } else if (error instanceof AppError) {
-                 // Handle other known application errors
                 res.status(error.statusCode).json({
                     success: false,
                     message: error.message,
@@ -49,7 +47,6 @@ export class AuthController {
                 });
             }
             else {
-                // Handle unexpected errors
                 res.status(500).json({
                     success: false,
                     message: 'An unexpected error occurred during registration.',
@@ -62,7 +59,7 @@ export class AuthController {
     //02 - Login
     static async loginUser(req: Request<{}, {}, LoginDto>, res: Response) {
         try {
-           const authData = await AuthService.loginUser(req.body);
+            const authData = await AuthService.loginUser(req.body);
 
             // Set refresh token as an HTTP-only cookie
             res.cookie('refreshToken', authData.refreshToken, AuthController.REFRESH_TOKEN_COOKIE_OPTIONS);
@@ -107,10 +104,10 @@ export class AuthController {
             const refreshToken = req.cookies?.refreshToken;
             if (!refreshToken) {
                 // Send 401 directly if cookie is missing, no need to throw
-                 return res.status(401).json({
+                return res.status(401).json({
                     success: false,
                     message: 'No refresh token provided'
-                 });
+                });
             }
 
             const tokens = await AuthService.refreshToken(refreshToken);
@@ -134,7 +131,7 @@ export class AuthController {
                     error: process.env.NODE_ENV !== 'production' ? String(error) : undefined
                 });
             } else if (error instanceof AppError) {
-                 res.status(error.statusCode).json({
+                res.status(error.statusCode).json({
                     success: false,
                     message: error.message,
                     error: process.env.NODE_ENV !== 'production' ? String(error) : undefined
@@ -154,7 +151,7 @@ export class AuthController {
     static async logout(req: Request, res: Response) {
         try {
             // Clear the refresh token cookie
-            res.clearCookie('refreshToken', {path: '/'});
+            res.clearCookie('refreshToken', { path: '/' });
 
             res.status(200).json({
                 success: true,
@@ -164,8 +161,8 @@ export class AuthController {
         } catch (error) {
             console.error('Logout error:', error);
 
-             if (error instanceof AppError) {
-                 res.status(error.statusCode).json({
+            if (error instanceof AppError) {
+                res.status(error.statusCode).json({
                     success: false,
                     message: error.message,
                     error: process.env.NODE_ENV !== 'production' ? String(error) : undefined

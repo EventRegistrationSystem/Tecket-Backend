@@ -19,7 +19,7 @@ export class AuthService {
     private static generateRefreshToken(userId: number): string {
         return jwt.sign(
             { userId },
-            process.env.REFRESH_TOKEN_SECRET!,
+            process.env.JWT_REFRESH_SECRET!,
             { expiresIn: "7d" }
         )
     }
