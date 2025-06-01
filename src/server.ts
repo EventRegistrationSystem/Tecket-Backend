@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import app from './app';
 import { prisma } from './config/prisma';
 import { initializeEmailTransporter } from './services/emailServices';
+// import { configCloudinary } from './services/imageServices';
 
 dotenv.config();
 
@@ -24,6 +25,6 @@ const startServer = async () => {
     }
 };
 
-
+// configCloudinary();
 initializeEmailTransporter();
 startServer();
