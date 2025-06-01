@@ -443,7 +443,6 @@ export class RegistrationService {
                     attendees: {
                         include: {
                             participant: { select: { id: true, firstName: true, lastName: true, email: true } },
-                            ticket: { select: { id: true, name: true, price: true } } // include ticket info
                         }
                     },
                     purchase: {
@@ -511,10 +510,11 @@ export class RegistrationService {
         }
         if (ticketId) {
             // filter by ticket purchased or assigned to attendee
-            whereInput.OR = [
-                { purchase: { items: { some: { ticketId: ticketId } } } },
-                { attendees: { some: { ticketId: ticketId } } }
-            ];
+            whereInput.purchase = {
+                items: {
+                    some: { ticketId: ticketId }
+                }
+            };
         }
 
         type RegistrationWithDetails = Prisma.RegistrationGetPayload<{
@@ -647,7 +647,6 @@ export class RegistrationService {
                 attendees: {
                     include: {
                         participant: true, // Full participant details for each attendee
-                        ticket: true,      // include ticket info
                         responses: {
                             include: {
                                 eventQuestion: { // To get the actual question text
@@ -786,11 +785,9 @@ export class RegistrationService {
         if (participantId) baseWhereInput.participantId = participantId;
         if (status) baseWhereInput.status = status;
         if (ticketId) {
-            // filter by purchase item or attendee assignment
-            baseWhereInput.OR = [
-                { purchase: { items: { some: { ticketId: ticketId } } } },
-                { attendees: { some: { ticketId: ticketId } } }
-            ];
+            baseWhereInput.purchase = {
+                items: { some: { ticketId: ticketId } }
+            };
         }
 
         const andConditions: Prisma.RegistrationWhereInput[] = [];
@@ -832,7 +829,7 @@ export class RegistrationService {
                     select: { name: true }
                 },
                 attendees: {
-                    select: { id: true, ticketId: true } // include attendee ticket
+                    select: { id: true } 
                 },
                 purchase: {
                     select: { totalPrice: true }
@@ -854,7 +851,7 @@ export class RegistrationService {
                         select: { name: true }
                     },
                     attendees: {
-                        select: { id: true, ticketId: true } // include attendee ticket
+                        select: { id: true } 
                     },
                     purchase: {
                         select: { totalPrice: true }

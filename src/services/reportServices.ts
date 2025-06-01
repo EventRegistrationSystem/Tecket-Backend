@@ -56,9 +56,10 @@ export class ReportService {
     const registrations = await prisma.registration.findMany({
       where: { eventId },
       include: {
-        attendees: { // Include attendees of the registration
+        attendees: {
           include: {
-            participant: true, // Include participant details for each attendee
+            participant: true,
+            ticket: { select: { name: true } }, // Use attendee's ticket relation
             responses: { // Include responses to event questions by the attendee
               include: {
                 eventQuestion: { // Include the event question details
@@ -83,17 +84,16 @@ export class ReportService {
 
     // Process each registration to extract participant information and aggregate question responses
     for (const reg of registrations) {
-      const itemsPerAttendee = reg.purchase?.items ?? []; // Get purchased items, default to empty array if none
-      reg.attendees.forEach((att, idx) => {
-        // Construct participant section for the report
-        participants.push({
-          name: `${att.participant.firstName} ${att.participant.lastName}`,
-          email: att.participant.email,
-          ticket: itemsPerAttendee[idx]?.ticket?.name ?? 'Unknown', // Get ticket name, default to 'Unknown'
-          questionnairreResponses: att.responses.map((r) => ({
-            question: r.eventQuestion.question.questionText,
-            response: r.responseText,
-          })),
+       reg.attendees.forEach((att, idx) => {
+         // Construct participant section for the report
+         participants.push({
+           name: `${att.participant.firstName} ${att.participant.lastName}`,
+           email: att.participant.email,
+           ticket: att.ticket.name, // Use ticket from attendee relation
+           questionnairreResponses: att.responses.map((r) => ({
+             question: r.eventQuestion.question.questionText,
+             response: r.responseText,
+           })),
         });
 
         // Aggregate responses for each question
