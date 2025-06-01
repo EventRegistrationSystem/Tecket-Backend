@@ -288,7 +288,9 @@ export class RegistrationService {
             }
 
             const primaryParticipantInput = participants[0];
-            const primaryParticipant = await ParticipantService.findOrCreateParticipant(primaryParticipantInput, tx);
+            // Remove ticketId from participant data before creating Participant
+            const { ticketId: _, responses: primaryResponses, ...primaryData } = primaryParticipantInput;
+            const primaryParticipant = await ParticipantService.findOrCreateParticipant(primaryData as any, tx);
 
             const registration = await tx.registration.create({
                 data: {
@@ -355,14 +357,16 @@ export class RegistrationService {
                 if (participantInput.email === primaryParticipantInput.email) {
                     currentParticipantId = primaryParticipant.id;
                 } else {
-                    const participant = await ParticipantService.findOrCreateParticipant(participantInput, tx);
+                    // Strip ticketId and responses before creating Participant
+                    const { ticketId: _, responses, ...pData } = participantInput;
+                    const participant = await ParticipantService.findOrCreateParticipant(pData as any, tx);
                     currentParticipantId = participant.id;
                 }
                 const attendee = await tx.attendee.create({
                     data: {
                         registrationId: newRegistrationId,
                         participantId: currentParticipantId,
-                        ticketId: participantInput.ticketId, // assign ticket to attendee
+                        ticketId: participantInput.ticketId,
                     }
                 });
                 const responsePromises = participantInput.responses.map(response => {
