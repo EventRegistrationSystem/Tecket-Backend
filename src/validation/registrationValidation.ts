@@ -39,6 +39,9 @@ const participantInputSchema = Joi.object<ParticipantInput>({
     state: Joi.string().optional().allow(''),
     zipCode: Joi.string().optional().allow(''),
     country: Joi.string().optional().allow(''),
+    ticketId: Joi.number().integer().positive().required().messages({
+        'any.required': 'Ticket ID is required for each participant'
+    }),
     responses: Joi.array().items(participantResponseSchema).required().messages({
         'array.base': 'Participant responses must be an array',
         'any.required': 'Participant responses are required'
