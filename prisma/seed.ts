@@ -363,6 +363,7 @@ async function createRegistrationsAndResponses(participants: any[], eventId: num
       data: {
         registrationId: registration.id,
         participantId: participantProfile.id, // Use the ID from the Participant table
+        ticketId: selectedTicket.id    // Assign ticket to attendee
       }
     });
 
