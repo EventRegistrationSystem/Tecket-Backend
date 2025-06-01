@@ -89,6 +89,8 @@ model Event {
   startDateTime DateTime    @map("start_datetime")
   endDateTime   DateTime    @map("end_datetime")
   status        EventStatus @default(DRAFT)
+  imageUrl      String?     @map("image_url") 
+
   createdAt     DateTime    @default(now()) @map("created_at")
   updatedAt     DateTime    @updatedAt @map("updated_at")
 

@@ -90,7 +90,7 @@ export class ReportService {
           name: `${att.participant.firstName} ${att.participant.lastName}`,
           email: att.participant.email,
           ticket: itemsPerAttendee[idx]?.ticket?.name ?? 'Unknown', // Get ticket name, default to 'Unknown'
-          questionnairreResponses: att.responses.map((r) => ({
+          questionnaireResponses: att.responses.map((r) => ({
             question: r.eventQuestion.question.questionText,
             response: r.responseText,
           })),

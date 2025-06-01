@@ -9,6 +9,7 @@ export interface CreateEventDTO {
     capacity: number,
     eventType: 'SPORTS' | 'MUSICAL' | 'SOCIAL' | 'VOLUNTEERING',
     isFree: boolean,
+    image_url: string,
     startDateTime: Date | string,
     endDateTime: Date | string,
     tickets?: Array<{
