@@ -1,5 +1,10 @@
 node_modules/
+
+# All non-example .env file
 .env
+.env.*
+!.env.example
+!.env.*.example
 
 /.idea
 /coverage

@@ -22,9 +22,6 @@ COPY . .
 # Build the TypeScript application
 RUN npm run build
 
-# 3. Prune devDependencies to keep the final image smaller RUN npm prune --production
-RUN npm prune --production
-
 # Stage 2: Production image
 FROM node:20-alpine
 
