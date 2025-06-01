@@ -172,7 +172,7 @@ model Attendee {
   registrationId Int      @map("registration_id")
   participantId  Int      @map("participant_id")
   // Optional: Add ticketId if specific ticket types need assignment
-  // ticketId       Int?     @map("ticket_id")
+  ticketId       Int      @map("ticket_id") 
   // Optional: Add a unique ticket code if needed for check-in/validation
   // ticketCode     String?  @unique @map("ticket_code")
   createdAt      DateTime @default(now()) @map("created_at")
@@ -181,8 +181,8 @@ model Attendee {
   // Relations
   registration Registration @relation(fields: [registrationId], references: [id])
   participant  Participant  @relation(fields: [participantId], references: [id])
-  // ticket       Ticket?      @relation(fields: [ticketId], references: [id]) // Uncomment if ticketId added
-  responses    Response[]   // Link responses to this attendee
+  ticket         Ticket   @relation(fields: [ticketId], references: [id])
+  responses      Response[]   // Link responses to this attendee
 
   @@map("attendees")
 }
@@ -251,6 +251,7 @@ model Ticket {
   // Relations
   event     Event      @relation(fields: [eventId], references: [id])
   purchaseItems PurchaseItem[] // Added relation to PurchaseItem
+  attendees      Attendee[]    // Relation to Attendee model
 
   @@map("tickets")
 }
