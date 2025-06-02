@@ -611,4 +611,16 @@ export class EventService {
             });
         });
     }
+
+    /**
+     * 05 - Get total attendee count for a specific event
+     * @param eventId - ID of the event
+     */
+    static async getAttendeeCount(eventId: number): Promise<number> {
+        // Ensure event exists
+        const event = await prisma.event.findUnique({ where: { id: eventId } });
+        if (!event) throw new NotFoundError('Event not found');
+        // Count attendees for this event via registration relation
+        return prisma.attendee.count({ where: { registration: { eventId } } });
+    }
 }

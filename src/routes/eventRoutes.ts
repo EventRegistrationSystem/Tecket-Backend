@@ -137,6 +137,39 @@ router.get('/', optionalAuthenticate, EventController.getAllEvents);
  */
 router.get('/:id', optionalAuthenticate, EventController.getEventById);
 
+/**
+ * @openapi
+ * /events/{id}/attendees/count:
+ *   get:
+ *     summary: Get attendee count for an event
+ *     description: Returns the total number of attendees registered for a specific event.
+ *     tags: [Events]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Event ID
+ *     responses:
+ *       '200':
+ *         description: Attendee count retrieved
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 count:
+ *                   type: integer
+ *                   example: 150
+ *       '404':
+ *         description: Event not found
+ */
+router.get(
+  '/:id/attendees/count',
+  EventController.getAttendeeCount
+);
+
 // Protected routes 
 /**
  * @openapi
