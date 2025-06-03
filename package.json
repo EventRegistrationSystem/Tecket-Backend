@@ -10,10 +10,11 @@
     "test:coverage": "jest --coverage",
     "start": "node dist/server.js",
     "dev": "nodemon src/server.ts",
-    "build": "tsc",
+    "build": "tsc && npm run build:seed",
+    "build:seed": "tsc prisma/seed.ts --outDir dist/prisma --module CommonJs --target ES2020 --esModuleInterop --resolveJsonModule --skipLibCheck --sourceMap",
     "watch": "tsc -w",
     "db:seed": "ts-node prisma/seed.ts",
-    "db:seed:prod": "ts-node prisma/prod-seed.ts",
+    "db:seed:prod": "node dist/prisma/seed.js",
     "db:reset": "prisma migrate reset --force",
     "db:setup": "prisma generate && prisma migrate deploy && npm run db:seed",
     "setup:dev": "npm install && npm run db:setup"
