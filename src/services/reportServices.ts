@@ -91,7 +91,7 @@ export class ReportService {
            email: att.participant.email,
            ticket: att.ticket.name,
            registrationStatus: reg.status,  // Added registration status field
-           questionnairreResponses: att.responses.map((r) => ({
+           questionnaireResponses: att.responses.map((r) => ({
              question: r.eventQuestion.question.questionText,
              response: r.responseText,
            })),
