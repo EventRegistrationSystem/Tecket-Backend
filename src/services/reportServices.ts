@@ -89,7 +89,8 @@ export class ReportService {
          participants.push({
            name: `${att.participant.firstName} ${att.participant.lastName}`,
            email: att.participant.email,
-           ticket: att.ticket.name, // Use ticket from attendee relation
+           ticket: att.ticket.name,
+           registrationStatus: reg.status,  // Added registration status field
            questionnairreResponses: att.responses.map((r) => ({
              question: r.eventQuestion.question.questionText,
              response: r.responseText,
