@@ -22,4 +22,17 @@ export class EmailController {
       type
     );
   }
+
+  static async sendConfirmation(req: Request, res: Response): Promise<void> {
+    const { email, registrationId, eventName, startDateTime, endDateTime, location } = req.body;
+    const result = await EmailService.sendConfirmationEmail(
+      email,
+      registrationId,
+      eventName,
+      startDateTime,
+      endDateTime,
+      location
+    );
+    res.status(200).json({ message: result });
+  }
 }
