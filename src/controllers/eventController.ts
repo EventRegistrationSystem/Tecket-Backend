@@ -199,7 +199,26 @@ export class EventController {
     }
 
     /**
-     * 04 - Update event
+     * 04 - Get attendee count for an event
+     * @param req
+     * @param res
+     * @param next
+     */
+    static async getAttendeeCount(req: Request, res: Response, next: NextFunction): Promise<void> {
+        try {
+            const eventId = parseInt(req.params.id, 10);
+            if (isNaN(eventId)) {
+                throw new ValidationError('Invalid event ID');
+            }
+            const count = await EventService.getAttendeeCount(eventId);
+            res.status(200).json({ count });
+        } catch (error: any) {
+            next(error);
+        }
+    }
+
+    /**
+     * 05 - Update event
      * @param req 
      * @param res 
      * @returns 
@@ -253,7 +272,7 @@ export class EventController {
     }
 
     /**
-     * 05 - Update event status
+     * 06 - Update event status
      * @param req 
      * @param res 
      * @returns 
@@ -317,7 +336,7 @@ export class EventController {
     }
 
     /**
-     * 06 - Delete event
+     * 07 - Delete event
      * @param req 
      * @param res 
      * @returns 
