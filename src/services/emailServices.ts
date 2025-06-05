@@ -37,6 +37,33 @@ export class EmailService {
     const successMessage = `Sent email to ${mess.accepted}`;
     return successMessage;
   }
+
+  static async sendConfirmationEmail(
+    userEmail: string,
+    registrationId: string,
+    eventName: string,
+    startDateTime: Date | string,
+    endDateTime: Date | string,
+    location: string
+  ) {
+    const info = await transporter?.sendMail({
+      from: process.env.SMTP_USER,
+      to: userEmail,
+      subject: "Registration Confirmed",
+      html: `<h1>Your Registration is Confirmed!</h1>
+         <div class="card custom-card mb-4">
+           <h2 class="card-header">Event Details</h2>
+           <div class="card-body">
+             <h3 class="card-title">${eventName}</h3>
+             <p><strong>Date:</strong> ${startDateTime} - ${endDateTime}</p>
+             <p><strong>Location:</strong> ${location}</p>
+             <p><strong>Registration ID:</strong> ${registrationId}</p>
+           </div>
+         </div>
+         <p>We look forward to seeing you at the event!</p>`,
+    });
+    return `Confirmation email sent to ${info?.accepted}`;
+  }
 }
 
 export async function initializeEmailTransporter() {
