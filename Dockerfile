@@ -43,5 +43,4 @@ COPY --from=builder /usr/src/app/prisma ./prisma
 EXPOSE 3000
 
 # Command to run the application
-# The prisma migrate deploy command will be handled by docker-compose
 CMD ["node", "dist/server.js"]

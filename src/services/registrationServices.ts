@@ -391,6 +391,12 @@ export class RegistrationService {
         });
     }
 
+    /**
+     * Fetches registrations based on various filters and pagination.
+     * @param query - The query parameters for filtering and pagination.
+     * @param authUser - The authenticated user making the request.
+     * @return An object containing the registrations and total count.
+     */
     static async getRegistrations(query: GetRegistrationsQuery, authUser: JwtPayload) {
         const { eventId, userId, page, limit } = query;
         const skip = (page - 1) * limit;
@@ -579,7 +585,7 @@ export class RegistrationService {
                     select: {
                         id: true,
                         name: true,
-                        startDateTime: true, // Corrected field name from schema
+                        startDateTime: true,
                         // endDateTime: true, // Also available if needed
                         organiserId: true,
                         isFree: true
@@ -621,7 +627,6 @@ export class RegistrationService {
         }>;
 
         // Let TypeScript infer the type of 'registration' directly from the Prisma query with includes.
-        // The explicit type 'RegistrationFullDetails | null' can sometimes cause issues if inference is tricky.
         const registration = await prisma.registration.findUnique({
             where: { id: registrationId },
             include: {
@@ -630,7 +635,7 @@ export class RegistrationService {
                     select: {
                         id: true,
                         name: true,
-                        startDateTime: true, // Corrected field name from schema
+                        startDateTime: true,
                         // endDateTime: true, // Also available if needed
                         organiserId: true,
                         isFree: true

@@ -12,7 +12,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     user: "node"
-    command: sh -c "npx prisma migrate deploy && npm start"
+    command: sh -c "npx prisma migrate deploy && npm run db:seed:prod && npm start"
 
   # Production database service
   db: 
@@ -24,7 +24,7 @@ services:
       MYSQL_USER: ${PROD_MYSQL_USER}
       MYSQL_PASSWORD: ${PROD_MYSQL_PASSWORD}
     volumes:
-      - tecket_prod_mysql_data:/var/lib/mysql # Specific volume for production data
+      - tecket-prod-mysql-data:/var/lib/mysql # Specific volume for production data
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost", "-u${PROD_MYSQL_USER}", "-p${PROD_MYSQL_PASSWORD}"]
@@ -36,5 +36,5 @@ services:
     #   - "33060:3306" 
 
 volumes:
-  tecket_prod_mysql_data: 
-    name: tecket_prod_mysql_data 
+  tecket-prod-mysql-data: 
+    name: tecket-prod-mysql-data
