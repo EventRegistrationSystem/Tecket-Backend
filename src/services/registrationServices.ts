@@ -33,6 +33,7 @@ const registrationFullDetailsArgs = Prisma.validator<Prisma.RegistrationDefaultA
         attendees: {
             include: {
                 participant: true,
+                ticket: true, // include ticket relation
                 responses: {
                     include: {
                         eventQuestion: {
@@ -287,7 +288,9 @@ export class RegistrationService {
             }
 
             const primaryParticipantInput = participants[0];
-            const primaryParticipant = await ParticipantService.findOrCreateParticipant(primaryParticipantInput, tx);
+            // Remove ticketId from participant data before creating Participant
+            const { ticketId: _, responses: primaryResponses, ...primaryData } = primaryParticipantInput;
+            const primaryParticipant = await ParticipantService.findOrCreateParticipant(primaryData as any, tx);
 
             const registration = await tx.registration.create({
                 data: {
@@ -354,13 +357,16 @@ export class RegistrationService {
                 if (participantInput.email === primaryParticipantInput.email) {
                     currentParticipantId = primaryParticipant.id;
                 } else {
-                    const participant = await ParticipantService.findOrCreateParticipant(participantInput, tx);
+                    // Strip ticketId and responses before creating Participant
+                    const { ticketId: _, responses, ...pData } = participantInput;
+                    const participant = await ParticipantService.findOrCreateParticipant(pData as any, tx);
                     currentParticipantId = participant.id;
                 }
                 const attendee = await tx.attendee.create({
                     data: {
                         registrationId: newRegistrationId,
                         participantId: currentParticipantId,
+                        ticketId: participantInput.ticketId,
                     }
                 });
                 const responsePromises = participantInput.responses.map(response => {
@@ -442,7 +448,7 @@ export class RegistrationService {
                     event: { select: { id: true, name: true, organiserId: true, isFree: true } },
                     attendees: {
                         include: {
-                            participant: { select: { id: true, firstName: true, lastName: true, email: true } }
+                            participant: { select: { id: true, firstName: true, lastName: true, email: true } },
                         }
                     },
                     purchase: {
@@ -509,6 +515,7 @@ export class RegistrationService {
             whereInput.OR = [...participantSearch, attendeeParticipantSearch];
         }
         if (ticketId) {
+            // filter by ticket purchased or assigned to attendee
             whereInput.purchase = {
                 items: {
                     some: { ticketId: ticketId }
@@ -594,9 +601,10 @@ export class RegistrationService {
                 attendees: {
                     include: {
                         participant: true,
+                        ticket: true,      // include ticket info
                         responses: {
                             include: {
-                                eventQuestion: {
+                                eventQuestion: { // To get the actual question text
                                     include: {
                                         question: { select: { id: true, questionText: true, questionType: true } }
                                     }
@@ -607,22 +615,22 @@ export class RegistrationService {
                 },
                 purchase: {
                     include: {
-                        items: {
+                        items: { // PurchaseItems
                             select: {
                                 id: true,
                                 quantity: true,
-                                unitPrice: true,
-                                ticket: {
+                                unitPrice: true, // Price at the time of purchase
+                                ticket: { // Linked ticket
                                     select: {
                                         id: true,
-                                        name: true
+                                        name: true // Name of the ticket type
                                     }
                                 }
                             }
                         },
-                        payment: true
+                        payment: true // Full payment details
                     }
-                }
+                },
             }
         }>;
 
@@ -826,7 +834,7 @@ export class RegistrationService {
                     select: { name: true }
                 },
                 attendees: {
-                    select: { id: true }
+                    select: { id: true } 
                 },
                 purchase: {
                     select: { totalPrice: true }
@@ -848,7 +856,7 @@ export class RegistrationService {
                         select: { name: true }
                     },
                     attendees: {
-                        select: { id: true }
+                        select: { id: true } 
                     },
                     purchase: {
                         select: { totalPrice: true }

@@ -358,16 +358,18 @@ async function createRegistrationsAndResponses(participants: any[], eventId: num
       }
     });
 
+    const selectedTicket = tickets[i % tickets.length]; // Cycle through available tickets
+
     // Create an Attendee record for this participant and registration
     const attendee = await prisma.attendee.create({
       data: {
         registrationId: registration.id,
         participantId: participantProfile.id, // Use the ID from the Participant table
+        ticketId: selectedTicket.id    // Assign ticket to attendee
       }
     });
 
     // Create ticket purchase (simplified: one ticket per registration for now)
-    const selectedTicket = tickets[i % tickets.length]; // Cycle through available tickets
     const purchase = await prisma.purchase.create({
       data: {
         registrationId: registration.id,

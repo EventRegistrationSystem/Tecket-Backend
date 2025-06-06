@@ -1,8 +1,8 @@
-
 import { PaymentStatus, RegistrationStatus } from "@prisma/client";
 
 // Includes participant details and their specific answers
 export interface ParticipantInput {
+    ticketId: number; // ID of the ticket assigned to this participant
     email: string;
     firstName: string;
     lastName: string;

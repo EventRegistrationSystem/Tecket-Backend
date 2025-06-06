@@ -20,7 +20,7 @@ export class RegistrationController {
     /**
      * Handle POST /registrations
      * Creates a new registration for an event, handling multiple participants.
-     */
+    */
     static async createRegistration(req: Request, res: Response, next: NextFunction): Promise<void> {
         try {
             // TODO: Update registrationValidationSchema to match CreateRegistrationDto structure
