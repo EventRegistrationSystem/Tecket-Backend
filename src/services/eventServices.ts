@@ -17,6 +17,7 @@ import {
 import { UserRole } from "@prisma/client";
 
 export class EventService {
+
   private static async verifyAdminOrEventOrganizer(
     userId: number,
     userRole: UserRole,
@@ -677,9 +678,16 @@ export class EventService {
         });
       }
     }
+    // Update the event status
+    const updatedEvent = await prisma.event.update({
+      where: { id: eventId },
+      data: { status },
+    });
 
+    return updatedEvent;
+  }
 
-    /**
+  /**
      * 05 - Get total attendee count for a specific event
      * @param eventId - ID of the event
      */
@@ -690,15 +698,6 @@ export class EventService {
         // Count attendees for this event via registration relation
         return prisma.attendee.count({ where: { registration: { eventId } } });
     }
-
-    // Update the event status
-    const updatedEvent = await prisma.event.update({
-      where: { id: eventId },
-      data: { status },
-    });
-
-    return updatedEvent;
-  }
 
   /**
    * 06 - Delete an event
