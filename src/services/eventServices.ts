@@ -478,6 +478,7 @@ export class EventService {
         },
       });
 
+      /*
       // --- Ticket Synchronization (Monolithic: Delete existing then create from payload) ---
       if (eventData.tickets !== undefined) {
         // Process if tickets array is explicitly provided
@@ -577,6 +578,8 @@ export class EventService {
           }
         }
       }
+      */
+
       // Pass requestingUser to getEventWithDetails for visibility checks
       const finalRequestingUser: JwtPayload = {
         userId: requestingUserId,
