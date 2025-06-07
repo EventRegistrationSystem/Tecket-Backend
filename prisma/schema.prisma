@@ -123,10 +123,10 @@ model QuestionOption {
   id           Int    @id @default(autoincrement())
   questionId   Int    @map("question_id")
   optionText   String @map("option_text")
-  displayOrder Int?   @map("display_order") // Optional field for ordering
+  displayOrder Int?   @map("display_order") 
 
   // Relations
-  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade) // Added onDelete for data integrity
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade) 
 
   @@unique([questionId, optionText])
   @@map("question_options")
@@ -152,7 +152,7 @@ model EventQuestions {
 
 model Response {
   id             Int    @id @default(autoincrement()) @map("id")
-  attendeeId     Int    @map("attendee_id") // Add link to Attendee
+  attendeeId     Int    @map("attendee_id") 
   eqId           Int    @map("eq_id")
   responseText   String @map("response_text") @db.Text
 
@@ -171,7 +171,6 @@ model Attendee {
   id             Int      @id @default(autoincrement())
   registrationId Int      @map("registration_id")
   participantId  Int      @map("participant_id")
-  // Optional: Add ticketId if specific ticket types need assignment
   ticketId       Int      @map("ticket_id") 
   // Optional: Add a unique ticket code if needed for check-in/validation
   // ticketCode     String?  @unique @map("ticket_code")
@@ -182,7 +181,7 @@ model Attendee {
   registration Registration @relation(fields: [registrationId], references: [id])
   participant  Participant  @relation(fields: [participantId], references: [id])
   ticket         Ticket   @relation(fields: [ticketId], references: [id])
-  responses      Response[]   // Link responses to this attendee
+  responses      Response[]   
 
   @@map("attendees")
 }
@@ -204,8 +203,8 @@ model Participant {
 
   // Relations
   registrations  Registration[] // Relation to registrations where this participant is primary
-  attendees      Attendee[]   // Add relation: instances where this participant is an attendee
-  userId         Int?      @map("user_id") // Optional link to user account
+  attendees      Attendee[]   // Instances where this participant is an attendee
+  userId         Int?      @map("user_id") 
   user           User?     @relation(fields: [userId], references: [id])
 
   @@unique([email])
@@ -251,7 +250,7 @@ model Ticket {
   // Relations
   event     Event      @relation(fields: [eventId], references: [id])
   purchaseItems PurchaseItem[] // Added relation to PurchaseItem
-  attendees      Attendee[]    // Relation to Attendee model
+  attendees      Attendee[]    
 
   @@map("tickets")
 }
@@ -267,7 +266,7 @@ model Purchase {
   // Relations
   registration Registration @relation(fields: [registrationId], references: [id])
   payment      Payment?
-  items        PurchaseItem[] // Added relation to PurchaseItem
+  items        PurchaseItem[] 
 
   // Fields for guest payment authorization
   paymentToken       String?   @unique @map("payment_token") 
@@ -282,7 +281,7 @@ model PurchaseItem {
   purchaseId Int     @map("purchase_id")
   ticketId   Int     @map("ticket_id")
   quantity   Int
-  unitPrice  Decimal @map("unit_price") @db.Decimal(10, 2) // Price per ticket at time of purchase
+  unitPrice  Decimal @map("unit_price") @db.Decimal(10, 2)
 
   // Relations
   purchase Purchase @relation(fields: [purchaseId], references: [id])
@@ -296,8 +295,8 @@ model Payment {
   purchaseId    Int           @unique @map("purchase_id")
   stripePaymentIntentId  String        @unique @map("stripe_payment_intent_id") 
   amount        Decimal       @db.Decimal(10, 2)
-  currency               String        // Added for Stripe (e.g., "aud", "usd")
-  paymentMethod PaymentMethod @map("payment_method") // Keep for now, might adjust later based on Stripe methods used
+  currency               String        
+  paymentMethod PaymentMethod @map("payment_method") 
   status        PaymentStatus @default(PENDING) @map("status")
 
   createdAt DateTime @default(now()) @map("created_at")

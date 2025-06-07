@@ -268,9 +268,19 @@ export class EventService {
       prisma.event.count({ where }), // Count the total number of events
     ]);
 
+    const eventsWithStats = events.map(event => {
+      const ticketsSold = event.tickets.reduce((acc, ticket) => acc + ticket.quantitySold, 0);
+      const revenue = event.tickets.reduce((acc, ticket) => acc + (Number(ticket.price) * ticket.quantitySold), 0);
+      return {
+        ...event,
+        ticketsSold,
+        revenue,
+      };
+    });
+
     // 4. Return the events and total count with pagination
     return {
-      events,
+      events: eventsWithStats,
       pagination: {
         total,
         page,
@@ -346,7 +356,14 @@ export class EventService {
       // ADMINs can see any status, so no explicit check needed here for them.
     }
 
-    return event;
+    const ticketsSold = event.tickets.reduce((acc, ticket) => acc + ticket.quantitySold, 0);
+    const revenue = event.tickets.reduce((acc, ticket) => acc + (Number(ticket.price) * ticket.quantitySold), 0);
+
+    return {
+      ...event,
+      ticketsSold,
+      revenue,
+    };
   }
 
   /**
