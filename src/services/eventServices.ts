@@ -96,7 +96,7 @@ export class EventService {
           description: eventData.description,
           location: eventData.location,
           capacity: eventData.capacity,
-          imageUrl: eventData.image_url,
+          imageUrl: eventData.imageUrl,
           eventType: eventData.eventType,
           isFree: eventData.isFree,
           startDateTime: new Date(eventData.startDateTime),
@@ -269,9 +269,19 @@ export class EventService {
       prisma.event.count({ where }), // Count the total number of events
     ]);
 
+    const eventsWithStats = events.map(event => {
+      const ticketsSold = event.tickets.reduce((acc, ticket) => acc + ticket.quantitySold, 0);
+      const revenue = event.tickets.reduce((acc, ticket) => acc + (Number(ticket.price) * ticket.quantitySold), 0);
+      return {
+        ...event,
+        ticketsSold,
+        revenue,
+      };
+    });
+
     // 4. Return the events and total count with pagination
     return {
-      events,
+      events: eventsWithStats,
       pagination: {
         total,
         page,
@@ -347,7 +357,14 @@ export class EventService {
       // ADMINs can see any status, so no explicit check needed here for them.
     }
 
-    return event;
+    const ticketsSold = event.tickets.reduce((acc, ticket) => acc + ticket.quantitySold, 0);
+    const revenue = event.tickets.reduce((acc, ticket) => acc + (Number(ticket.price) * ticket.quantitySold), 0);
+
+    return {
+      ...event,
+      ticketsSold,
+      revenue,
+    };
   }
 
   /**
@@ -467,7 +484,7 @@ export class EventService {
           description: eventData.description,
           location: eventData.location,
           capacity: eventData.capacity,
-          imageUrl: eventData.image_url,
+          imageUrl: eventData.imageUrl,
           eventType: eventData.eventType,
           isFree: eventData.isFree,
           startDateTime: eventData.startDateTime
@@ -479,105 +496,6 @@ export class EventService {
         },
       });
 
-      // --- Ticket Synchronization (Monolithic: Delete existing then create from payload) ---
-      if (eventData.tickets !== undefined) {
-        // Process if tickets array is explicitly provided
-        // Fetch existing tickets to delete them respecting business rules via TicketService
-        const existingDbTickets = await tx.ticket.findMany({
-          where: { eventId: eventId },
-        });
-        for (const dbTicket of existingDbTickets) {
-          try {
-            // TicketService.deleteTicket will handle rules like not deleting sold tickets, with tx passed
-            await TicketService.deleteTicket(
-              requestingUserId,
-              requestingUserRole,
-              dbTicket.id,
-              tx
-            );
-          } catch (error) {
-            // Log or handle error if a specific ticket cannot be deleted (e.g., sold tickets)
-
-            // This might mean the overall update strategy needs to be more nuanced than "delete all then create all"
-            // if some tickets cannot be deleted.
-
-            console.warn(
-              `Could not delete ticket ${dbTicket.id} during event update: ${
-                error instanceof Error ? error.message : error
-              }`
-            );
-
-            // Throw an error
-            // throw new EventError(`Could not delete ticket ${dbTicket.id}: ${error instanceof Error ? error.message : error}`);
-          }
-        }
-
-        // Create new tickets from the payload
-        if (eventData.tickets && !updatedEvent.isFree) {
-          for (const incomingTicket of eventData.tickets) {
-            // It also needs the event's endDateTime for validation, which updatedEventData would have.
-            await TicketService.createTicket(
-              requestingUserId,
-              requestingUserRole,
-              eventId,
-              {
-                eventId: eventId,
-                name: incomingTicket.name,
-                description: incomingTicket.description,
-                price: incomingTicket.price,
-                quantityTotal: incomingTicket.quantityTotal,
-                salesStart: new Date(incomingTicket.salesStart),
-                salesEnd: new Date(incomingTicket.salesEnd),
-                // status will be defaulted by TicketService.createTicket if not provided
-              },
-              tx
-            );
-          }
-        }
-      }
-
-      // --- Question Synchronization (Monolithic: Delete existing links then create from payload) ---
-      if (eventData.questions !== undefined) {
-        // Delete all existing EventQuestion links for this event
-        // It also has rules about not deleting if responses exist.
-        const existingEventQuestionLinks = await tx.eventQuestions.findMany({
-          where: { eventId: eventId },
-        });
-        for (const link of existingEventQuestionLinks) {
-          try {
-            await EventQuestionService.deleteEventQuestionLink(
-              requestingUserId,
-              requestingUserRole,
-              eventId,
-              link.id,
-              tx
-            ); // Pass tx
-          } catch (error) {
-            console.warn(
-              `Could not delete event-question link ${
-                link.id
-              } during event update: ${
-                error instanceof Error ? error.message : error
-              }`
-            );
-          }
-        }
-
-        // Create new EventQuestion links from the payload
-        if (eventData.questions) {
-          for (const incomingQuestion of eventData.questions) {
-            // Pass the entire incomingQuestion object (which is AddEventQuestionLinkDTO)
-            // This ensures questionId, questionType, options, category, etc., are passed through
-            await EventQuestionService.addQuestionToEvent(
-              requestingUserId,
-              requestingUserRole,
-              eventId,
-              incomingQuestion, // Pass the full DTO
-              tx
-            );
-          }
-        }
-      }
       // Pass requestingUser to getEventWithDetails for visibility checks
       const finalRequestingUser: JwtPayload = {
         userId: requestingUserId,
@@ -684,6 +602,12 @@ export class EventService {
       data: { status },
     });
 
+    // Update the event status
+    const updatedEvent = await prisma.event.update({
+      where: { id: eventId },
+      data: { status },
+    });
+
     return updatedEvent;
   }
 
@@ -691,13 +615,13 @@ export class EventService {
      * 05 - Get total attendee count for a specific event
      * @param eventId - ID of the event
      */
-    static async getAttendeeCount(eventId: number): Promise<number> {
-        // Ensure event exists
-        const event = await prisma.event.findUnique({ where: { id: eventId } });
-        if (!event) throw new NotFoundError('Event not found');
-        // Count attendees for this event via registration relation
-        return prisma.attendee.count({ where: { registration: { eventId } } });
-    }
+  static async getAttendeeCount(eventId: number): Promise<number> {
+    // Ensure event exists
+    const event = await prisma.event.findUnique({ where: { id: eventId } });
+    if (!event) throw new NotFoundError('Event not found');
+    // Count attendees for this event via registration relation
+    return prisma.attendee.count({ where: { registration: { eventId } } });
+  }
 
   /**
    * 06 - Delete an event
