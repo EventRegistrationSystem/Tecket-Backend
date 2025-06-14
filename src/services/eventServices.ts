@@ -602,12 +602,6 @@ export class EventService {
       data: { status },
     });
 
-    // Update the event status
-    const updatedEvent = await prisma.event.update({
-      where: { id: eventId },
-      data: { status },
-    });
-
     return updatedEvent;
   }
 

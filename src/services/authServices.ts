@@ -43,8 +43,11 @@ export class AuthService {
         // Create a new user
         const newUser = await prisma.user.create({
             data: {
-                ...data,
+                email,
                 password: hashedPassword,
+                firstName,
+                lastName,
+                phoneNo,
                 role: 'PARTICIPANT' // Default role
             }
         });

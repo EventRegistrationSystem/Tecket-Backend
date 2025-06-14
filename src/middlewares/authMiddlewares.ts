@@ -85,14 +85,24 @@ export const authorize = (...roles: string[]) => {
 
 // Middleware to validate request body
 export const validateRequest = (schema: Schema) => {
-    return (req: Request, res: Response, next: NextFunction) => {
-
-        const { error } = schema.validate(req.body);
+    return (req: Request, res: Response, next: NextFunction): void => {
+        const { error } = schema.validate(req.body, { abortEarly: false }); // Abort early false to get all errors
 
         if (error) {
-            return next(new ValidationError(error.details[0].message));
+            const validationErrors = error.details.map(detail => ({
+                message: detail.message,
+                path: detail.path,
+                context: detail.context,
+            }));
+            
+            res.status(400).json({
+                success: false,
+                message: 'Validation failed',
+                details: validationErrors,
+            });
+            return;
         }
 
-        next(); 
+        next();
     }
 }
