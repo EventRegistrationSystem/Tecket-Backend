@@ -26,6 +26,18 @@ export class UserService {
             throw new ValidationError("User not found");
         }
 
+        // If email is being updated, check if the new email is already taken
+        if (data.email && data.email !== user.email) {
+            const existingUser = await prisma.user.findUnique({
+                where: {
+                    email: data.email,
+                },
+            });
+            if (existingUser) {
+                throw new ValidationError("Email already registered");
+            }
+        }
+
         // Update user data
         const updatedUser = await prisma.user.update({
             where: { id: userId },

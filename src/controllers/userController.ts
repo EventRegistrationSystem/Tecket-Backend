@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { UserService } from "../services/userServices";
 import { CreateUserDTO } from "../types/userTypes";
+import { ValidationError } from "../utils/errors";
 
 export class UserController {
     // 01 - Get user profile
@@ -54,6 +55,14 @@ export class UserController {
             });
         } catch (error) {
             console.error("Update profile error:", error);
+
+            if (error instanceof ValidationError) {
+                res.status(400).json({
+                    success: false,
+                    message: error.message,
+                });
+                return;
+            }
 
             res.status(500).json({
                 success: false,
@@ -154,6 +163,14 @@ export class UserController {
             });
         } catch (error) {
             console.error("Create user error:", error);
+
+            if (error instanceof ValidationError) {
+                res.status(400).json({
+                    success: false,
+                    message: error.message,
+                });
+                return;
+            }
 
             res.status(500).json({
                 success: false,
