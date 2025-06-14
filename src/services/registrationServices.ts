@@ -1,4 +1,4 @@
-import { Registration, UserRole, Prisma, RegistrationStatus, Participant, Attendee, Response as PrismaResponse, Purchase, Ticket, Event, QuestionType } from '@prisma/client'; // Import necessary models, Added QuestionType
+import { Registration, UserRole, Prisma, RegistrationStatus, Participant, RegistrationParticipant, Response as PrismaResponse, Purchase, Ticket, Event, QuestionType } from '@prisma/client'; // Import necessary models, Added QuestionType
 import { prisma } from '../config/prisma';
 // DTO and types
 import {
@@ -30,7 +30,7 @@ const registrationFullDetailsArgs = Prisma.validator<Prisma.RegistrationDefaultA
                 isFree: true
             }
         },
-        attendees: {
+        registrationParticipants: {
             include: {
                 participant: true,
                 ticket: true, // include ticket relation
@@ -362,7 +362,7 @@ export class RegistrationService {
                     const participant = await ParticipantService.findOrCreateParticipant(pData as any, tx);
                     currentParticipantId = participant.id;
                 }
-                const attendee = await tx.attendee.create({
+            const registrationParticipant = await tx.registrationParticipant.create({
                     data: {
                         registrationId: newRegistrationId,
                         participantId: currentParticipantId,
@@ -376,7 +376,7 @@ export class RegistrationService {
                     }
                     return tx.response.create({
                         data: {
-                            attendeeId: attendee.id,
+                            registrationParticipantId: registrationParticipant.id,
                             eqId: eventQuestion.id,
                             responseText: response.responseText
                         }
@@ -446,7 +446,7 @@ export class RegistrationService {
                 include: {
                     participant: { select: { id: true, firstName: true, lastName: true, email: true } },
                     event: { select: { id: true, name: true, organiserId: true, isFree: true } },
-                    attendees: {
+                    registrationParticipants: {
                         include: {
                             participant: { select: { id: true, firstName: true, lastName: true, email: true } },
                         }
@@ -499,8 +499,8 @@ export class RegistrationService {
                 { participant: { lastName: { contains: searchLower } } },
                 { participant: { email: { contains: searchLower } } },
             ];
-            const attendeeParticipantSearch = {
-                attendees: {
+            const registrationParticipantSearch = {
+                registrationParticipants: {
                     some: {
                         participant: {
                             OR: [
@@ -512,7 +512,7 @@ export class RegistrationService {
                     }
                 }
             };
-            whereInput.OR = [...participantSearch, attendeeParticipantSearch];
+            whereInput.OR = [...participantSearch, registrationParticipantSearch];
         }
         if (ticketId) {
             // filter by ticket purchased or assigned to attendee
@@ -528,7 +528,7 @@ export class RegistrationService {
                 participant: {
                     select: { firstName: true, lastName: true, email: true }
                 },
-                attendees: {
+                registrationParticipants: {
                     select: { id: true }
                 },
                 purchase: {
@@ -547,9 +547,9 @@ export class RegistrationService {
                     participant: {
                         select: { firstName: true, lastName: true, email: true }
                     },
-                    attendees: {
-                        select: { id: true }
-                    },
+                registrationParticipants: {
+                    select: { id: true } 
+                },
                     purchase: {
                         select: { totalPrice: true }
                     }
@@ -567,7 +567,7 @@ export class RegistrationService {
                 registrationDate: reg.created_at,
                 primaryParticipantName: primaryParticipantName,
                 primaryParticipantEmail: reg.participant.email,
-                numberOfAttendees: reg.attendees.length,
+                numberOfAttendees: reg.registrationParticipants.length,
                 registrationStatus: reg.status,
                 totalAmountPaid: reg.purchase?.totalPrice ?? null
             };
@@ -649,7 +649,7 @@ export class RegistrationService {
                         isFree: true
                     }
                 },
-                attendees: {
+                registrationParticipants: {
                     include: {
                         participant: true, // Full participant details for each attendee
                         responses: {
@@ -738,7 +738,7 @@ export class RegistrationService {
                             }
                         }
                     },
-                    attendees: { include: { participant: true } }
+                    registrationParticipants: { include: { participant: true } }
                 }
             });
             if (!registration.event.isFree && registration.purchase) {
@@ -807,7 +807,7 @@ export class RegistrationService {
                 { participant: { lastName: { contains: searchLower } } },
                 { participant: { email: { contains: searchLower } } },
                 {
-                    attendees: {
+                    registrationParticipants: {
                         some: {
                             participant: {
                                 OR: [
@@ -833,7 +833,7 @@ export class RegistrationService {
                 event: {
                     select: { name: true }
                 },
-                attendees: {
+                registrationParticipants: {
                     select: { id: true } 
                 },
                 purchase: {
@@ -855,9 +855,9 @@ export class RegistrationService {
                     event: {
                         select: { name: true }
                     },
-                    attendees: {
-                        select: { id: true } 
-                    },
+                registrationParticipants: {
+                    select: { id: true } 
+                },
                     purchase: {
                         select: { totalPrice: true }
                     }
@@ -877,7 +877,7 @@ export class RegistrationService {
                 eventName: reg.event.name,
                 primaryParticipantName: primaryParticipantName,
                 primaryParticipantEmail: reg.participant.email,
-                numberOfAttendees: reg.attendees.length,
+                numberOfAttendees: reg.registrationParticipants.length,
                 registrationStatus: reg.status,
                 totalAmountPaid: reg.purchase?.totalPrice ?? null
             };

@@ -53,8 +53,10 @@ async function main() {
 async function clearDatabase() {
   // Delete in correct order to maintain referential integrity
   await prisma.payment.deleteMany();
+  await prisma.purchaseItem.deleteMany();
   await prisma.purchase.deleteMany();
   await prisma.response.deleteMany();
+  await prisma.registrationParticipant.deleteMany();
   await prisma.eventQuestions.deleteMany();
   await prisma.question.deleteMany();
   await prisma.ticket.deleteMany();
@@ -360,12 +362,12 @@ async function createRegistrationsAndResponses(participants: any[], eventId: num
 
     const selectedTicket = tickets[i % tickets.length]; // Cycle through available tickets
 
-    // Create an Attendee record for this participant and registration
-    const attendee = await prisma.attendee.create({
+    // Create an RegistrationParticipant record for this participant and registration
+    const registrationParticipant = await prisma.registrationParticipant.create({
       data: {
         registrationId: registration.id,
         participantId: participantProfile.id, // Use the ID from the Participant table
-        ticketId: selectedTicket.id    // Assign ticket to attendee
+        ticketId: selectedTicket.id    // Assign ticket to registrationParticipant
       }
     });
 
@@ -450,7 +452,7 @@ async function createRegistrationsAndResponses(participants: any[], eventId: num
         if (shouldCreateResponse) {
           await prisma.response.create({
             data: {
-              attendeeId: attendee.id, // Link to Attendee
+              registrationParticipantId: registrationParticipant.id, // Link to RegistrationParticipant
               eqId: eq.id,
               responseText
             }

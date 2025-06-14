@@ -53,8 +53,8 @@ export interface RegistrationDetailsDto {
         lastName: string;
         email: string;
     };
-    attendees: Array<{ // Details of all attendees including primary
-        attendeeId: number;
+    registrationParticipants: Array<{ // Details of all attendees including primary
+        registrationParticipantId: number;
         participantId: number;
         firstName: string;
         lastName: string;
@@ -78,7 +78,7 @@ export interface RegistrationSummaryDto {
     registrationDate: Date;
     primaryParticipantName: string; // e.g., "John Doe"
     primaryParticipantEmail: string;
-    numberOfAttendees: number;
+    numberOfRegistrationParticipants: number;
     status: string; // RegistrationStatus enum value
     totalAmountPaid?: number; // Optional, for paid events
     eventName?: string; // Optional, for admin views listing registrations across events

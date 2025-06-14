@@ -139,10 +139,10 @@ router.get('/:id', optionalAuthenticate, EventController.getEventById);
 
 /**
  * @openapi
- * /events/{id}/attendees/count:
+ * /events/{id}/registration-participants/count:
  *   get:
- *     summary: Get attendee count for an event
- *     description: Returns the total number of attendees registered for a specific event.
+ *     summary: Get registration participant count for an event
+ *     description: Returns the total number of registration participants for a specific event.
  *     tags: [Events]
  *     parameters:
  *       - in: path
@@ -153,7 +153,7 @@ router.get('/:id', optionalAuthenticate, EventController.getEventById);
  *         description: Event ID
  *     responses:
  *       '200':
- *         description: Attendee count retrieved
+ *         description: Registration participant count retrieved
  *         content:
  *           application/json:
  *             schema:
@@ -166,8 +166,8 @@ router.get('/:id', optionalAuthenticate, EventController.getEventById);
  *         description: Event not found
  */
 router.get(
-  '/:id/attendees/count',
-  EventController.getAttendeeCount
+  '/:id/registration-participants/count',
+  EventController.getRegistrationParticipantCount
 );
 
 // Protected routes 

@@ -16,7 +16,7 @@ jest.mock('../../config/prisma', () => {
         purchase: { create: jest.fn(), update: jest.fn() },
         purchaseItem: { create: jest.fn() },
         ticket: { findMany: jest.fn(), update: jest.fn() },
-        attendee: { create: jest.fn() },
+        registrationParticipant: { create: jest.fn() },
         response: { create: jest.fn() },
         participant: { findUnique: jest.fn(), create: jest.fn() }, // Added for ParticipantService if it uses it directly
         eventQuestions: { findMany: jest.fn() }, // Added for fetching event questions
@@ -67,6 +67,7 @@ describe('RegistrationService', () => {
             email: 'test@example.com',
             firstName: 'Test',
             lastName: 'User',
+            ticketId: mockTicketId1, // Add a default ticketId for testing
             responses: [{ eventQuestionId: 1, responseText: 'Answer 1' }],
         };
 
@@ -85,7 +86,7 @@ describe('RegistrationService', () => {
         const mockParticipant = { id: 1, email: 'test@example.com', firstName: 'Test', lastName: 'User' };
         const mockRegistration = { id: 1, eventId: mockEventId, participantId: mockParticipant.id, userId: mockUserId, status: RegistrationStatus.PENDING };
         const mockPurchase = { id: 1, registrationId: mockRegistration.id, totalPrice: new Decimal(50) };
-        const mockAttendee = { id: 1, registrationId: mockRegistration.id, participantId: mockParticipant.id };
+        const mockRegistrationParticipant = { id: 1, registrationId: mockRegistration.id, participantId: mockParticipant.id };
 
         it('should successfully create a registration for a logged-in user for a paid event', async () => {
             const dto: CreateRegistrationDto = {
@@ -102,7 +103,7 @@ describe('RegistrationService', () => {
             (prisma.purchaseItem.create as jest.Mock).mockResolvedValue({});
             (prisma.ticket.findMany as jest.Mock).mockResolvedValue(mockEventPublishedPaid.tickets); // For re-validation in transaction
             (prisma.ticket.update as jest.Mock).mockResolvedValue({});
-            (prisma.attendee.create as jest.Mock).mockResolvedValue(mockAttendee);
+            (prisma.registrationParticipant.create as jest.Mock).mockResolvedValue(mockRegistrationParticipant);
             (prisma.response.create as jest.Mock).mockResolvedValue({});
 
             const result = await RegistrationService.createRegistration(dto, mockUserId);
@@ -127,7 +128,7 @@ describe('RegistrationService', () => {
             // For guest, userId in registration record should be null (or undefined if Prisma handles it that way)
             const mockGuestRegistration = { ...mockRegistration, id: 2, participantId: mockGuestParticipant.id, userId: null }; 
             const mockGuestPurchase = { ...mockPurchase, id: 2, registrationId: mockGuestRegistration.id };
-            const mockGuestAttendee = { ...mockAttendee, id: 2, registrationId: mockGuestRegistration.id, participantId: mockGuestParticipant.id };
+            const mockGuestRegistrationParticipant = { ...mockRegistrationParticipant, id: 2, registrationId: mockGuestRegistration.id, participantId: mockGuestParticipant.id };
             const mockUuid = 'test-uuid-123';
             const mockHashedToken = 'hashed-test-uuid-123';
 
@@ -143,7 +144,7 @@ describe('RegistrationService', () => {
             (prisma.ticket.findMany as jest.Mock).mockResolvedValue(mockEventPublishedPaid.tickets);
             (prisma.ticket.update as jest.Mock).mockResolvedValue({});
             (prisma.purchase.update as jest.Mock).mockResolvedValue({}); // For payment token
-            (prisma.attendee.create as jest.Mock).mockResolvedValue(mockGuestAttendee);
+            (prisma.registrationParticipant.create as jest.Mock).mockResolvedValue(mockGuestRegistrationParticipant);
             (prisma.response.create as jest.Mock).mockResolvedValue({});
 
             const result = await RegistrationService.createRegistration(dto, undefined); // No userId for guest
@@ -247,7 +248,7 @@ describe('RegistrationService', () => {
             (prisma.registration.count as jest.Mock).mockResolvedValue(0);
             (ParticipantService.findOrCreateParticipant as jest.Mock).mockResolvedValue(mockParticipant);
             (prisma.registration.create as jest.Mock).mockResolvedValue({ ...mockRegistration, status: RegistrationStatus.CONFIRMED });
-            (prisma.attendee.create as jest.Mock).mockResolvedValue(mockAttendee);
+            (prisma.registrationParticipant.create as jest.Mock).mockResolvedValue(mockRegistrationParticipant);
             (prisma.response.create as jest.Mock).mockResolvedValue({});
         
             const result = await RegistrationService.createRegistration(dto, mockUserId);

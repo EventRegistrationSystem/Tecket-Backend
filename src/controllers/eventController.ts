@@ -204,15 +204,15 @@ export class EventController {
      * @param res
      * @param next
      */
-    static async getAttendeeCount(req: Request, res: Response, next: NextFunction): Promise<void> {
+    static async getRegistrationParticipantCount(req: Request, res: Response, next: NextFunction): Promise<void> {
         try {
             const eventId = parseInt(req.params.id, 10);
             if (isNaN(eventId)) {
                 throw new ValidationError('Invalid event ID');
             }
-            const count = await EventService.getAttendeeCount(eventId);
+            const count = await EventService.getRegistrationParticipantCount(eventId);
             res.status(200).json({ count });
-        } catch (error: any) {
+        } catch (error) {
             next(error);
         }
     }
