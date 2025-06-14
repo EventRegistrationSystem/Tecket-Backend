@@ -6,6 +6,7 @@ export interface RegisterDto {
     firstName: string;
     lastName: string;
     phoneNo?: string;
+    role?: 'PARTICIPANT' | 'ORGANIZER';
 }
 
 export interface LoginDto {

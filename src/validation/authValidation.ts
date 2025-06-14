@@ -35,7 +35,9 @@ export const registerSchema = Joi.object({
         .optional()
         .messages({
             'string.pattern.base': 'Please provide a valid phone number'
-        })
+        }),
+    
+    role: Joi.string().valid('PARTICIPANT', 'ORGANIZER').optional()
 });
 
 export const loginSchema = Joi.object({

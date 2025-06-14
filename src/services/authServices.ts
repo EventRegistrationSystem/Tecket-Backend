@@ -26,7 +26,7 @@ export class AuthService {
 
     // 01 - Register a new user
     static async registerUser(data: RegisterDto): Promise<AuthResponse & { refreshToken: string }> {
-        const { email, password, firstName, lastName, phoneNo } = data;
+        const { email, password, firstName, lastName, phoneNo, role } = data;
 
         // Check if user already exists
         const existingUser = await prisma.user.findUnique({
@@ -48,7 +48,7 @@ export class AuthService {
                 firstName,
                 lastName,
                 phoneNo,
-                role: 'PARTICIPANT' // Default role
+                role: role || 'ORGANIZER' // Default role if not provided
             }
         });
 
