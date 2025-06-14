@@ -132,7 +132,7 @@ router.put(
     '/:eventQuestionId',
     authenticate,
     authorize('ORGANIZER', 'ADMIN'),
-    validateRequest(updateEventQuestionLinkSchema),
+    // validateRequest(updateEventQuestionLinkSchema),
     EventQuestionController.updateEventQuestionLink
 );
 
