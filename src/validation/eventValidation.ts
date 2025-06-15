@@ -25,6 +25,7 @@ export const createEventSchema = Joi.object({
     description: Joi.string().optional(),
     location: Joi.string().required(),
     capacity: Joi.number().integer().min(1).required(),
+    imageUrl: Joi.string().uri().optional(),
     eventType: Joi.string().valid('SPORTS', 'MUSICAL', 'SOCIAL', 'VOLUNTEERING').required(),
     isFree: Joi.boolean().default(false),
 
@@ -47,47 +48,26 @@ export const createEventSchema = Joi.object({
 export const updateEventSchema = Joi.object({
     // All fields are optional for updates
     name: Joi.string().optional(),
-    describetion: Joi.string().optional(),
+    description: Joi.string().optional(),
     location: Joi.string().optional(),
     capacity: Joi.number().integer().min(1).optional(),
+    imageUrl: Joi.string().uri().optional(),
     eventType: Joi.string().valid('SPORTS', 'MUSICAL', 'SOCIAL', 'VOLUNTEERING').optional(),
     isFree: Joi.boolean().optional(),
 
     startDateTime: Joi.date().greater('now').optional(),
-    endDateTime: Joi.date().greater(Joi.ref('startDateTime')).optional(),
-
-    // Tickets  - required if changing from free to paid
-    tickets: Joi.alternatives().conditional(
-        'isFree', {
-        is: false,
-        then: Joi.array().items(ticketSchema).min(1).required(),
-        otherwise: Joi.array().items(ticketSchema).min(0).optional()
-    }
-    ),
-
-    // Questions validation - always required
-    questions: Joi.array().items(questionSchema).min(1).optional(),
+    endDateTime: Joi.date().greater(Joi.ref('startDateTime')).optional()
 }).custom((value, helpers) => {
     // If both dates are provided, check if endDateTime is greater than startDateTime
     if (value.startDateTime && value.endDateTime && new Date(value.endDateTime) <= new Date(value.startDateTime)) {
         return helpers.error('date.greater', {
             message: 'endDateTime must be greater than startDateTime'
-        }
-        );
-    }
-
-    // If changing from free to paid, ensure tickets are provided
-    if (value.isFree === false && !value.tickets) {
-        return helpers.error('array.min', {
-            message: 'tickets are required when isFree is false'
         });
     }
-
     return value;
-})
+});
 
 // 05 - Schema for updating event status
 export const updateEventStatusSchema = Joi.object({
     status: Joi.string().valid('DRAFT, PUBLISHED', 'CANCELLED').required()
 })
-
